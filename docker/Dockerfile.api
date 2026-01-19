@@ -1,0 +1,79 @@
+# AutoDJ API Dockerfile
+# Multi-stage build for optimized production image
+
+# Stage 1: Builder (using Debian for native module compatibility)
+FROM node:20-slim AS builder
+
+# Install build tools for native modules
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Copy workspace files
+COPY pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY package.json ./
+
+# Copy package.json files for all packages
+COPY packages/config-eslint/package.json ./packages/config-eslint/
+COPY packages/config-typescript/package.json ./packages/config-typescript/
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/database/package.json ./packages/database/
+COPY apps/api/package.json ./apps/api/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source files
+COPY packages/config-eslint ./packages/config-eslint
+COPY packages/config-typescript ./packages/config-typescript
+COPY packages/shared-types ./packages/shared-types
+COPY packages/database ./packages/database
+COPY apps/api ./apps/api
+
+# Generate Prisma client
+RUN pnpm --filter @autodj/database db:generate
+
+# Build packages
+RUN pnpm --filter @autodj/shared-types build
+RUN pnpm --filter @autodj/database build
+RUN pnpm --filter @autodj/api build
+
+# Stage 2: Production (Debian slim for OpenSSL compatibility)
+FROM node:20-slim AS production
+
+WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+# Create non-root user
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nestjs
+
+# Copy built files
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/database ./packages/database
+COPY --from=builder /app/packages/shared-types ./packages/shared-types
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=builder /app/apps/api/package.json ./apps/api/
+
+# Create storage directory with open permissions for worker access
+RUN mkdir -p /app/storage && chmod 777 /app/storage
+
+USER nestjs
+
+EXPOSE 3001
+
+ENV NODE_ENV=production
+ENV API_PORT=3001
+
+WORKDIR /app/apps/api
+
+CMD ["node", "dist/main.js"]

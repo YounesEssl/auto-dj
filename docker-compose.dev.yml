@@ -1,0 +1,97 @@
+version: '3.8'
+
+# Development docker-compose
+# Only runs infrastructure services (Postgres, Redis)
+# Apps are run locally with pnpm dev
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: autodj-postgres-dev
+    environment:
+      POSTGRES_USER: autodj
+      POSTGRES_PASSWORD: autodj
+      POSTGRES_DB: autodj
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U autodj" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: autodj-redis-dev
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Redis Commander for debugging
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: autodj-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles:
+      - debug
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: autodj-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@autodj.io
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    profiles:
+      - debug
+
+  # Python Workers with essentia (Python 3.11)
+  # Uses professional audio analysis libraries
+  workers:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.workers
+    container_name: autodj-workers-dev
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - STORAGE_BASE_PATH=/app/storage
+      - WORKER_COUNT=2
+      - LOG_LEVEL=DEBUG
+    volumes:
+      # Use the same named volume as the API container (from docker-compose.yml)
+      - autodj_storage_data:/app/storage
+      # Mount source for development (optional - remove for production-like testing)
+      - ./apps/workers/src:/app/src
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 8g
+    memswap_limit: 8g
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  autodj_storage_data:
+    external: true

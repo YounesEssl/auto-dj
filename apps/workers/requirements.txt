@@ -1,0 +1,28 @@
+# Audio Analysis
+librosa>=0.10.1
+audioread>=3.0.0
+
+# Audio Processing
+pydub>=0.25.1
+soundfile>=0.12.1
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Queue & Redis (BullMQ compatible)
+redis>=5.0.0
+bullmq>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+structlog>=24.1.0
+
+# LLM Integration
+anthropic>=0.18.0
+
+# Development
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

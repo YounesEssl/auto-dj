@@ -1,0 +1,74 @@
+# AutoDJ Python Workers Dockerfile
+# Professional audio analysis stack:
+# - Essentia: Key detection (Spotify-level)
+# - Madmom: BPM/beats (RNN deep learning)
+# - Demucs v4: Stem separation
+# Forces amd64 platform for wheel availability
+
+FROM --platform=linux/amd64 python:3.10-slim AS base
+
+# Install system dependencies for audio processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    libsox-dev \
+    sox \
+    libfftw3-dev \
+    libyaml-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libswresample-dev \
+    libsamplerate0 \
+    libtag1-dev \
+    libchromaprint-dev \
+    # Build tools for madmom
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies with NumPy < 1.24 for madmom compatibility
+# (numpy 1.24+ removed np.int/np.float deprecated aliases that madmom uses)
+COPY apps/workers/requirements.txt ./requirements.txt
+
+# Install in specific order for compatibility
+RUN pip install --no-cache-dir "numpy>=1.14.6,<1.24" && \
+    pip install --no-cache-dir cython && \
+    # Essentia for key detection
+    pip install --no-cache-dir essentia==2.1b6.dev858 && \
+    # Madmom for BPM/beats (RNN deep learning)
+    pip install --no-cache-dir madmom && \
+    # Fix madmom Python 3.10+ compatibility (collections.abc)
+    find /usr/local/lib/python3.10/site-packages/madmom -name "*.py" -exec sed -i 's/from collections import MutableSequence/from collections.abc import MutableSequence/g' {} \; && \
+    # Other audio libs
+    pip install --no-cache-dir "scipy<1.12" && \
+    pip install --no-cache-dir librosa==0.10.2 && \
+    pip install --no-cache-dir soundfile pydub structlog pydantic pydantic-settings redis bullmq scikit-learn pytest pytest-asyncio python-dotenv anthropic && \
+    # PyTorch CPU for Demucs (smaller than GPU version)
+    pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
+    # Demucs v4 for stem separation
+    pip install --no-cache-dir demucs
+
+# Copy application code
+COPY apps/workers/src ./src
+COPY apps/workers/prompts ./prompts
+COPY apps/workers/pyproject.toml ./
+
+# Create storage directory
+RUN mkdir -p /app/storage
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash worker
+RUN chown -R worker:worker /app
+USER worker
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "src.main"]
+
+# GPU variant (uncomment for GPU support)
+# FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS gpu
+# ... (similar setup with CUDA)

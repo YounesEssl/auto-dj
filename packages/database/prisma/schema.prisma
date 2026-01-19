@@ -1,0 +1,350 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// User Management
+// =============================================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String?
+  plan         Plan      @default(FREE)
+  projects     Project[]
+  drafts       Draft[]
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+// =============================================================================
+// Project Management
+// =============================================================================
+
+model Project {
+  id              String        @id @default(cuid())
+  name            String
+  status          ProjectStatus @default(CREATED)
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tracks          Track[]
+  jobs            Job[]
+  transitions     Transition[]
+  mixSegments     MixSegment[]
+  orderedTracks   String[]      @default([]) @map("ordered_tracks")
+  averageMixScore Float?        @map("average_mix_score")
+  lastOrderedAt   DateTime?     @map("last_ordered_at")
+  outputFile      String?       @map("output_file")
+  errorMessage    String?       @map("error_message")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  CREATED
+  UPLOADING
+  ANALYZING
+  ORDERING
+  READY
+  MIXING
+  COMPLETED
+  FAILED
+}
+
+// =============================================================================
+// Track Management
+// =============================================================================
+
+model Track {
+  id           String         @id @default(cuid())
+  projectId    String?        @map("project_id")
+  project      Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  filename     String
+  originalName String         @map("original_name")
+  filePath     String         @map("file_path")
+  duration     Float?
+  fileSize     Int            @map("file_size")
+  mimeType     String         @map("mime_type")
+  analysis     TrackAnalysis?
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  // Draft relations (a Track can be trackA or trackB in a Draft)
+  draftAsTrackA Draft?        @relation("DraftTrackA")
+  draftAsTrackB Draft?        @relation("DraftTrackB")
+
+  @@index([projectId])
+  @@map("tracks")
+}
+
+model TrackAnalysis {
+  id             String   @id @default(cuid())
+  trackId        String   @unique @map("track_id")
+  track          Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  bpm            Float
+  bpmConfidence  Float    @map("bpm_confidence")
+  key            String
+  keyConfidence  Float    @map("key_confidence")
+  camelot        String
+  energy         Float
+  danceability   Float
+  loudness       Float
+  beats          Json?    // Array of beat timestamps in seconds [0.5, 1.0, 1.5, ...]
+  introStart     Float?   @map("intro_start")
+  introEnd       Float?   @map("intro_end")
+  outroStart     Float?   @map("outro_start")
+  outroEnd       Float?   @map("outro_end")
+  structureJson  Json?    @map("structure_json")
+
+  // Mixability Analysis
+  introInstrumentalMs   Int?              @map("intro_instrumental_ms")
+  outroInstrumentalMs   Int?              @map("outro_instrumental_ms")
+  vocalPercentage       Float?            @map("vocal_percentage")
+  vocalIntensity        VocalIntensity?   @map("vocal_intensity")
+  maxBlendInDurationMs  Int?              @map("max_blend_in_duration_ms")
+  maxBlendOutDurationMs Int?              @map("max_blend_out_duration_ms")
+  bestMixInPointMs      Int?              @map("best_mix_in_point_ms")
+  bestMixOutPointMs     Int?              @map("best_mix_out_point_ms")
+  mixFriendly           Boolean           @default(true) @map("mix_friendly")
+  mixabilityWarnings    String[]          @default([]) @map("mixability_warnings")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@map("track_analyses")
+}
+
+// =============================================================================
+// Transitions between tracks
+// =============================================================================
+
+model Transition {
+  id                String              @id @default(cuid())
+  projectId         String              @map("project_id")
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromTrackId       String              @map("from_track_id")
+  toTrackId         String              @map("to_track_id")
+  position          Int
+  score             Int
+  harmonicScore     Int                 @map("harmonic_score")
+  bpmScore          Int                 @map("bpm_score")
+  energyScore       Int                 @map("energy_score")
+  compatibilityType HarmonicCompatibility @map("compatibility_type")
+  bpmDifference     Float               @map("bpm_difference")
+  energyDifference  Float               @map("energy_difference")
+  // Audio generation fields
+  audioStatus       TransitionAudioStatus @default(PENDING) @map("audio_status")
+  audioFilePath     String?             @map("audio_file_path")
+  audioDurationMs   Int?                @map("audio_duration_ms")
+  trackACutMs       Int?                @map("track_a_cut_ms")    // Where track A ends in the transition
+  trackBStartMs     Int?                @map("track_b_start_ms")  // Where track B starts in the transition
+  audioError        String?             @map("audio_error")
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  @@unique([projectId, position])
+  @@index([projectId])
+  @@map("transitions")
+}
+
+enum HarmonicCompatibility {
+  PERFECT_MATCH
+  ADJACENT
+  RELATIVE
+  DIAGONAL_ADJACENT
+  ENERGY_BOOST
+  COMPATIBLE
+  RISKY
+}
+
+enum TransitionAudioStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+// =============================================================================
+// Mix Segments - Ordered list of segments for playback
+// =============================================================================
+
+model MixSegment {
+  id             String           @id @default(cuid())
+  projectId      String           @map("project_id")
+  project        Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  position       Int              // Order in the mix (0, 1, 2, 3...)
+  type           MixSegmentType   // SOLO or TRANSITION
+
+  // For SOLO segments: reference to the track
+  trackId        String?          @map("track_id")
+
+  // For TRANSITION segments: reference to the transition
+  transitionId   String?          @map("transition_id")
+
+  // Playback timing (in milliseconds)
+  startMs        Int              @map("start_ms")   // Where to start in source file
+  endMs          Int              @map("end_ms")     // Where to end in source file
+  durationMs     Int              @map("duration_ms") // Segment duration
+
+  // For TRANSITION segments: generated audio file
+  audioFilePath  String?          @map("audio_file_path")
+  audioStatus    MixSegmentStatus @default(PENDING) @map("audio_status")
+  audioError     String?          @map("audio_error")
+
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  @@unique([projectId, position])
+  @@index([projectId])
+  @@map("mix_segments")
+}
+
+enum MixSegmentType {
+  SOLO       // Play original track from startMs to endMs
+  TRANSITION // Play generated transition file
+}
+
+enum MixSegmentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+// =============================================================================
+// Job Queue
+// =============================================================================
+
+model Job {
+  id          String    @id @default(cuid())
+  projectId   String    @map("project_id")
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        JobType
+  status      JobStatus @default(PENDING)
+  payload     Json
+  result      Json?
+  error       String?
+  progress    Int       @default(0)
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([type])
+  @@map("jobs")
+}
+
+enum JobType {
+  ANALYZE
+  ORDER
+  TRANSITION_AUDIO
+  MIX
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// =============================================================================
+// Draft - Proof of Concept for 2-track transitions
+// =============================================================================
+
+model Draft {
+  id                   String                @id @default(cuid())
+  name                 String
+  status               DraftStatus           @default(CREATED)
+  userId               String                @map("user_id")
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Track A (outgoing track) - reuses existing Track entity
+  trackAId             String?               @unique @map("track_a_id")
+  trackA               Track?                @relation("DraftTrackA", fields: [trackAId], references: [id], onDelete: SetNull)
+
+  // Track B (incoming track) - reuses existing Track entity
+  trackBId             String?               @unique @map("track_b_id")
+  trackB               Track?                @relation("DraftTrackB", fields: [trackBId], references: [id], onDelete: SetNull)
+
+  // Compatibility scores (calculated after both tracks analyzed)
+  compatibilityScore   Int?                  @map("compatibility_score")
+  harmonicScore        Int?                  @map("harmonic_score")
+  bpmScore             Int?                  @map("bpm_score")
+  energyScore          Int?                  @map("energy_score")
+  bpmDifference        Float?                @map("bpm_difference")
+
+  // Transition generation
+  transitionStatus     DraftTransitionStatus @default(PENDING) @map("transition_status")
+  transitionFilePath   String?               @map("transition_file_path")
+  transitionDurationMs Int?                  @map("transition_duration_ms")
+  transitionMode       TransitionMode        @default(STEMS) @map("transition_mode")
+  trackAOutroMs        Int?                  @map("track_a_outro_ms")  // Where Track A ends (outro start)
+  trackBIntroMs        Int?                  @map("track_b_intro_ms")  // Where Track B starts (intro end)
+
+  // Cut points for seamless playback (to avoid audio duplication)
+  trackAPlayUntilMs    Int?                  @map("track_a_play_until_ms")  // Stop playing Track A here (transition takes over)
+  trackBStartFromMs    Int?                  @map("track_b_start_from_ms")  // Start playing Track B here (after transition)
+
+  transitionError      String?               @map("transition_error")
+
+  errorMessage         String?               @map("error_message")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@map("drafts")
+}
+
+enum DraftStatus {
+  CREATED
+  UPLOADING
+  ANALYZING
+  READY       // Both tracks analyzed, ready for transition generation
+  GENERATING  // Transition being generated
+  COMPLETED
+  FAILED
+}
+
+enum DraftTransitionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+enum TransitionMode {
+  STEMS        // Full 4-phase stem-based mixing
+  STEM_BLEND   // Alias for STEMS (LLM output format)
+  CROSSFADE    // Simple crossfade (fallback when BPM diff > 8%)
+  HARD_CUT     // Instant cut (when BPM diff > 6% or harmonic < 50)
+  FILTER_SWEEP // HPF/LPF sweep transition
+  ECHO_OUT     // Delay/reverb tail exit
+}
+
+enum VocalIntensity {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+}

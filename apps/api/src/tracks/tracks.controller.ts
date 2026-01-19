@@ -1,0 +1,260 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  UseGuards,
+  UseInterceptors,
+  UploadedFiles,
+  BadRequestException,
+  Inject,
+  forwardRef,
+  Res,
+} from '@nestjs/common';
+import { Response } from 'express';
+import { createReadStream, statSync } from 'fs';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+} from '@nestjs/swagger';
+import type { User } from '@autodj/database';
+import { v4 as uuidv4 } from 'uuid';
+
+import { TracksService } from './tracks.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { StorageService } from '../storage/storage.service';
+import { QueueService } from '../queue/queue.service';
+import { ProjectsService } from '../projects/projects.service';
+
+const ALLOWED_MIME_TYPES = [
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
+  'audio/flac',
+  'audio/ogg',
+];
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+/**
+ * Controller for track upload and management
+ */
+@ApiTags('tracks')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('projects/:projectId/tracks')
+export class TracksController {
+  constructor(
+    private readonly tracksService: TracksService,
+    private readonly storageService: StorageService,
+    private readonly queueService: QueueService,
+    @Inject(forwardRef(() => ProjectsService))
+    private readonly projectsService: ProjectsService
+  ) {}
+
+  /**
+   * Get all tracks for a project
+   */
+  @Get()
+  @ApiOperation({ summary: 'List all tracks in a project' })
+  @ApiResponse({ status: 200, description: 'Tracks retrieved successfully' })
+  async findAll(@CurrentUser() user: User, @Param('projectId') projectId: string) {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+    return this.tracksService.findByProjectId(projectId);
+  }
+
+  /**
+   * Upload tracks to a project
+   */
+  @Post()
+  @ApiOperation({ summary: 'Upload tracks to a project' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Tracks uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file type or size' })
+  @UseInterceptors(FilesInterceptor('files', 50))
+  async upload(
+    @CurrentUser() user: User,
+    @Param('projectId') projectId: string,
+    @UploadedFiles() files: Express.Multer.File[]
+  ) {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No files uploaded');
+    }
+
+    const uploadedTracks = [];
+
+    for (const file of files) {
+      // Validate file type
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        throw new BadRequestException(
+          `Invalid file type: ${file.originalname}. Only MP3 and WAV files are allowed.`
+        );
+      }
+
+      // Validate file size
+      if (file.size > MAX_FILE_SIZE) {
+        throw new BadRequestException(
+          `File too large: ${file.originalname}. Maximum size is 100MB.`
+        );
+      }
+
+      // Generate unique filename
+      const extension = file.originalname.split('.').pop();
+      const filename = `${uuidv4()}.${extension}`;
+
+      // Save file to storage
+      const filePath = await this.storageService.saveFile(
+        file.buffer,
+        `projects/${projectId}/${filename}`
+      );
+
+      // Create track record
+      const track = await this.tracksService.create({
+        projectId,
+        filename,
+        originalName: file.originalname,
+        filePath,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      });
+
+      uploadedTracks.push(track);
+
+      // Queue analysis job
+      await this.queueService.queueAnalyzeJob({
+        projectId,
+        trackId: track.id,
+        filePath,
+      });
+    }
+
+    // Update project status to analyzing
+    await this.projectsService.updateStatus(projectId, 'ANALYZING');
+
+    return {
+      message: `${uploadedTracks.length} track(s) uploaded and queued for analysis`,
+      tracks: uploadedTracks,
+    };
+  }
+
+  /**
+   * Get a single track by ID
+   */
+  @Get(':trackId')
+  @ApiOperation({ summary: 'Get a track by ID' })
+  @ApiResponse({ status: 200, description: 'Track retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Track not found' })
+  async findOne(
+    @CurrentUser() user: User,
+    @Param('projectId') projectId: string,
+    @Param('trackId') trackId: string
+  ) {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+    return this.tracksService.findById(trackId);
+  }
+
+  /**
+   * Get track analysis
+   */
+  @Get(':trackId/analysis')
+  @ApiOperation({ summary: 'Get track analysis results' })
+  @ApiResponse({ status: 200, description: 'Analysis retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Analysis not found' })
+  async getAnalysis(
+    @CurrentUser() user: User,
+    @Param('projectId') projectId: string,
+    @Param('trackId') trackId: string
+  ) {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+    return this.tracksService.getAnalysis(trackId);
+  }
+
+  /**
+   * Stream track audio file
+   */
+  @Get(':trackId/audio')
+  @ApiOperation({ summary: 'Stream track audio file' })
+  @ApiResponse({ status: 200, description: 'Audio stream' })
+  @ApiResponse({ status: 404, description: 'Track not found' })
+  async streamAudio(
+    @CurrentUser() user: User,
+    @Param('projectId') projectId: string,
+    @Param('trackId') trackId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+
+    const track = await this.tracksService.findById(trackId);
+    // filePath is already absolute in the database
+    const absolutePath = track.filePath;
+
+    const stat = statSync(absolutePath);
+
+    res.set({
+      'Content-Type': track.mimeType,
+      'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=31536000',
+    });
+
+    const file = createReadStream(absolutePath);
+    file.pipe(res);
+  }
+
+  /**
+   * Delete a track
+   */
+  @Delete(':trackId')
+  @ApiOperation({ summary: 'Delete a track' })
+  @ApiResponse({ status: 200, description: 'Track deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Track not found' })
+  async remove(
+    @CurrentUser() user: User,
+    @Param('projectId') projectId: string,
+    @Param('trackId') trackId: string
+  ) {
+    // Verify user owns the project
+    await this.projectsService.findByIdAndUser(projectId, user.id);
+
+    const track = await this.tracksService.findById(trackId);
+
+    // Delete file from storage
+    await this.storageService.deleteFile(track.filePath);
+
+    // Delete track record
+    await this.tracksService.delete(trackId);
+
+    return { message: 'Track deleted successfully' };
+  }
+}
