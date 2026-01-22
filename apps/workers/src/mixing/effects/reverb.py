@@ -127,10 +127,25 @@ def apply_reverb(
     # Create output array
     output = np.zeros(output_length, dtype=np.float32)
 
+    # Normalize Wet signal to unity gain relative to input
+    # Convolution drastically changes amplitude depending on IR energy
+    # We want wet signal peak roughly equal to input peak
+    wet_max = np.max(np.abs(wet))
+    input_max = np.max(np.abs(audio))
+    
+    if wet_max > 0:
+        if input_max > 0:
+            target_peak = input_max
+        else:
+            target_peak = 1.0
+        
+        # Scale wet signal to match input level (approx)
+        wet = wet * (target_peak / wet_max)
+
     # Mix dry and wet
     output[:len(audio)] = audio * (1 - mix)
     output[:len(wet)] += wet * mix
-
+    
     return output
 
 

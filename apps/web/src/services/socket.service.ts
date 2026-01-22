@@ -1,6 +1,19 @@
 import { io, Socket } from 'socket.io-client';
 import type { JobProgress, MixOrderedEvent, DraftProgress, DraftTransitionCompleteEvent } from '@autodj/shared-types';
 
+// Transition progress event for real-time generation tracking
+export interface TransitionProgressEvent {
+  projectId: string;
+  transitionId: string;
+  status: 'PROCESSING' | 'COMPLETED' | 'ERROR';
+  progress?: number;
+  completedCount?: number;
+  totalCount?: number;
+  error?: string;
+  stage?: string;
+  message?: string;
+}
+
 // In production (Docker), use same origin (nginx proxies /socket.io to API)
 // In development, use VITE_WS_URL or localhost:3001
 const SOCKET_URL = import.meta.env.VITE_WS_URL || (
@@ -79,6 +92,19 @@ export const socketService = {
   offMixOrdered(callback: (data: MixOrderedEvent) => void) {
     if (socket) {
       socket.off('mix:ordered', callback);
+    }
+  },
+
+  // Transition progress (real-time generation updates)
+  onTransitionProgress(callback: (data: TransitionProgressEvent) => void) {
+    if (socket) {
+      socket.on('transition:progress', callback);
+    }
+  },
+
+  offTransitionProgress(callback: (data: TransitionProgressEvent) => void) {
+    if (socket) {
+      socket.off('transition:progress', callback);
     }
   },
 

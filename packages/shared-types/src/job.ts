@@ -214,6 +214,12 @@ export interface MixJobResult {
   segments: MixSegmentResult[];
   /** Map of transition IDs to their audio file paths */
   transitionFiles: Record<string, string>;
+  /** Path to the final concatenated mix file */
+  outputFile?: string;
+  /** Total duration of the mix in milliseconds */
+  totalDurationMs?: number;
+  /** Error during concatenation (segments still available) */
+  concatenationError?: string;
 }
 
 /**

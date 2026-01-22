@@ -34,7 +34,12 @@ def main():
         "Starting AutoDJ workers",
         worker_count=settings.worker_count,
         redis_host=settings.redis_host,
-        queues=[settings.queue_analyze, settings.queue_mix],
+        queues=[
+            settings.queue_analyze,
+            settings.queue_mix,
+            settings.queue_transitions,
+            settings.queue_draft_transition
+        ],
     )
 
     # Start worker processes

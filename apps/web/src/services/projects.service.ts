@@ -41,6 +41,35 @@ export interface TrackAnalysis {
   mixabilityWarnings?: string[] | null;
 }
 
+export interface TrackMetadata {
+  title?: string;
+  artist?: string;
+  album?: string;
+  genre?: string;
+  year?: number;
+  coverUrl?: string;
+}
+
+// Raw track data from API (with flat metadata fields)
+interface RawTrack {
+  id: string;
+  filename: string;
+  originalName: string;
+  duration: number | null;
+  fileSize: number;
+  mimeType: string;
+  createdAt: string;
+  analysis?: TrackAnalysis | null;
+  projectId?: string;
+  // Flat metadata fields from backend
+  metaTitle?: string | null;
+  metaArtist?: string | null;
+  metaAlbum?: string | null;
+  metaGenre?: string | null;
+  metaYear?: number | null;
+  coverPath?: string | null;
+}
+
 export interface Track {
   id: string;
   filename: string;
@@ -50,6 +79,40 @@ export interface Track {
   mimeType: string;
   createdAt: string;
   analysis?: TrackAnalysis | null;
+  metadata?: TrackMetadata | null;
+  projectId?: string;
+}
+
+/**
+ * Transform raw track data to include nested metadata object with cover URL
+ */
+function transformTrack(raw: RawTrack, projectId?: string): Track {
+  const pid = projectId || raw.projectId;
+  const hasMetadata = raw.metaTitle || raw.metaArtist || raw.metaAlbum || raw.coverPath;
+
+  return {
+    id: raw.id,
+    filename: raw.filename,
+    originalName: raw.originalName,
+    duration: raw.duration,
+    fileSize: raw.fileSize,
+    mimeType: raw.mimeType,
+    createdAt: raw.createdAt,
+    analysis: raw.analysis,
+    projectId: pid,
+    metadata: hasMetadata
+      ? {
+          title: raw.metaTitle || undefined,
+          artist: raw.metaArtist || undefined,
+          album: raw.metaAlbum || undefined,
+          genre: raw.metaGenre || undefined,
+          year: raw.metaYear || undefined,
+          coverUrl: raw.coverPath && pid
+            ? `/api/v1/projects/${pid}/tracks/${raw.id}/cover`
+            : undefined,
+        }
+      : undefined,
+  };
 }
 
 /**
@@ -112,28 +175,53 @@ export interface Project {
   };
 }
 
+// Raw project from API (with raw tracks)
+interface RawProject extends Omit<Project, 'tracks'> {
+  tracks: RawTrack[];
+}
+
+/**
+ * Transform a raw project to include properly formatted track metadata
+ */
+function transformProject(raw: RawProject): Project {
+  return {
+    ...raw,
+    tracks: raw.tracks.map((track) => transformTrack(track, raw.id)),
+  };
+}
+
 /**
  * Project management service
  */
 export const projectsService = {
   async getAll(): Promise<Project[]> {
     const response = await api.get('/projects');
-    return extractData<Project[]>(response);
+    const projects = extractData<RawProject[]>(response);
+    return projects.map(transformProject);
   },
 
   async getById(id: string): Promise<Project> {
     const response = await api.get(`/projects/${id}`);
-    return extractData<Project>(response);
+    const project = extractData<RawProject>(response);
+    return transformProject(project);
   },
 
   async create(name: string): Promise<Project> {
     const response = await api.post('/projects', { name });
+    // New project doesn't have tracks yet
     return extractData<Project>(response);
   },
 
-  async update(id: string, data: { name?: string }): Promise<Project> {
+  async update(id: string, data: { name?: string; orderedTracks?: string[] }): Promise<Project> {
     const response = await api.patch(`/projects/${id}`, data);
-    return extractData<Project>(response);
+    const project = extractData<RawProject>(response);
+    return transformProject(project);
+  },
+
+  async saveTrackOrder(id: string, orderedTracks: string[]): Promise<Project> {
+    const response = await api.patch(`/projects/${id}`, { orderedTracks });
+    const project = extractData<RawProject>(response);
+    return transformProject(project);
   },
 
   async delete(id: string): Promise<void> {

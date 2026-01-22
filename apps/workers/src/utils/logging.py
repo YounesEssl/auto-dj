@@ -40,10 +40,17 @@ def setup_logging(log_level: str = "INFO"):
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
     """
     # Set up standard logging
+    # Force flushing and use stderr for immediate output
+    handlers = [
+        logging.StreamHandler(sys.stderr),
+        logging.FileHandler("workers.log")
+    ]
+    
     logging.basicConfig(
         format="%(message)s",
-        stream=sys.stdout,
+        handlers=handlers,
         level=getattr(logging, log_level.upper()),
+        force=True, # Critical: override any existing config
     )
 
     # Silence noisy third-party loggers

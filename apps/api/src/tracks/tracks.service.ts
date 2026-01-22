@@ -49,6 +49,12 @@ export class TracksService {
     fileSize: number;
     mimeType: string;
     duration?: number;
+    metaTitle?: string;
+    metaArtist?: string;
+    metaAlbum?: string;
+    metaGenre?: string;
+    metaYear?: number;
+    coverPath?: string;
   }) {
     return prisma.track.create({
       data: {
@@ -59,6 +65,12 @@ export class TracksService {
         fileSize: data.fileSize,
         mimeType: data.mimeType,
         duration: data.duration,
+        metaTitle: data.metaTitle,
+        metaArtist: data.metaArtist,
+        metaAlbum: data.metaAlbum,
+        metaGenre: data.metaGenre,
+        metaYear: data.metaYear,
+        coverPath: data.coverPath,
       },
     });
   }

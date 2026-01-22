@@ -134,6 +134,24 @@ def calculate_transition_bars(avg_energy: float) -> int:
         return 32
 
 
+def _find_cue_point(
+    reference_time: float,
+    beats: List[float],
+    direction: str = 'nearest'
+) -> Tuple[float, int]:
+    """Find a suitable cue point (downbeat) near the reference time."""
+    if not beats:
+        return reference_time, -1
+
+    # Find nearest beat to reference
+    beat_time, beat_idx = find_nearest_beat(reference_time, beats, direction)
+
+    # Find the nearest downbeat
+    downbeat_time, downbeat_idx = find_downbeat(beat_idx, beats, BEATS_PER_BAR)
+
+    return downbeat_time, downbeat_idx
+
+
 def bars_to_ms(bars: int, bpm: float) -> int:
     """Convert bars to milliseconds."""
     beats = bars * BEATS_PER_BAR
@@ -568,22 +586,109 @@ def generate_draft_transition(
             duration_samples=transition_samples,
         )
 
-        # Step 3: Extract segments (mono arrays)
-        # Track A outro: extract the LAST transition_duration of the track
-        # This ensures we always have enough audio for the full transition
-        track_a_start = max(0, len(audio_a) - transition_samples)
-        segment_a = audio_a[track_a_start:]
+        # Step 3: Find cue points and extract segments
+        
+        # Track A: Find downbeat near outro start (or end of track if not set)
+        # Use outro_start if provided and valid (not 0 and not too close to end)
+        track_a_duration_s = len(audio_a) / SAMPLE_RATE
+        reference_time_a = track_a_duration_s - (transition_duration_ms / 1000.0)
+        
+        if params.track_a_outro_start_ms > 0:
+            outro_start_s = params.track_a_outro_start_ms / 1000.0
+            # Ensure we have enough audio after the cue point
+            if outro_start_s + (transition_duration_ms / 1000.0) <= track_a_duration_s:
+                reference_time_a = outro_start_s
+        
+        a_cue_time, a_cue_beat_idx = _find_cue_point(
+            reference_time_a,
+            params.track_a_beats,
+            'before' # Prefer starting transition slightly before or at the perfect point
+        )
 
-        # Track B intro: extract the FIRST transition_duration of the track
-        segment_b = audio_b[:transition_samples]
+        # CRITICAL FIX (Attempt 2): Use strict sample-based check
+        # Floating point comparison can be imprecise vs sample indices
+        # We calculate the candidate start sample and check against total samples
+        
+        while True:
+            track_a_start_candidate = int(a_cue_time * SAMPLE_RATE)
+            end_sample = track_a_start_candidate + transition_samples
+            max_samples = len(audio_a)
+            
+            logger.info(
+                "Checking cue point safety",
+                cue_time=a_cue_time,
+                start_sample=track_a_start_candidate,
+                end_sample=end_sample,
+                max_samples=max_samples,
+                overflow=end_sample - max_samples
+            )
+            
+            if end_sample <= max_samples:
+                # Safe!
+                break
+                
+            logger.warning(
+                "Cue point causes overflow (truncation detected), shifting back",
+                overflow_samples=end_sample - max_samples,
+                shift_bars=4
+            )
+            
+            # Shift back by 4 bars
+            if a_cue_beat_idx >= 16: # 4 bars * 4 beats
+                a_cue_beat_idx -= 16
+                if a_cue_beat_idx < len(params.track_a_beats):
+                    a_cue_time = params.track_a_beats[a_cue_beat_idx]
+                else:
+                    # Fallback if index invalid
+                     a_cue_time -= (bars_to_ms(4, params.track_a_bpm) / 1000.0)
+            else:
+                # Fallback time-based
+                a_cue_time -= (bars_to_ms(4, params.track_a_bpm) / 1000.0)
+            
+            if a_cue_time < 0:
+                a_cue_time = 0
+                logger.warning("Shifted back to start of track (0.0s)")
+                break
+
+        # Track B: Find downbeat near start (or intro end)
+        # We usually want to start B from its beginning, aligned to a downbeat
+        # But we need to account for stretching first to find the right beat index?
+        # Actually, for extraction we can rough it, but we need exact beat index for alignment.
+        # Since we stretch B later, let's find the beat in original B time first.
+        
+        b_cue_time_original, b_cue_beat_idx = _find_cue_point(
+            0.0, # Start from beginning
+            params.track_b_beats,
+            'after' # Don't cut off the very start if possible
+        )
+        
+        # Calculate start samples based on aligned cue points
+        track_a_start = int(a_cue_time * SAMPLE_RATE)
+        
+        # For B, we extract from the cue point
+        track_b_start = int(b_cue_time_original * SAMPLE_RATE)
+        
+        # Extract Track A: from cue point to (cue point + transition duration)
+        a_segment_end = min(track_a_start + transition_samples, len(audio_a))
+        segment_a = audio_a[track_a_start:a_segment_end]
+        
+        # Extract Track B: from cue point to (cue point + transition duration)
+        # Note: B will be stretched later, so we grab enough samples to cover the stretch
+        # We'll trim it down after stretching
+        # Estimate stretched length needed: duration * max_stretch_ratio
+        samples_needed_b = int(transition_samples * 1.1)  # +10% safety margin
+        b_segment_end = min(track_b_start + samples_needed_b, len(audio_b))
+        segment_b = audio_b[track_b_start:b_segment_end]
 
         logger.info(
-            "Segment extraction",
+            "Segment extraction with beat alignment",
+            track_a_cue_time=a_cue_time,
+            track_a_beat_idx=a_cue_beat_idx,
+            track_b_cue_time=b_cue_time_original,
+            track_b_beat_idx=b_cue_beat_idx,
             track_a_start_sample=track_a_start,
-            track_a_start_ms=int(track_a_start / SAMPLE_RATE * 1000),
             segment_a_len=len(segment_a),
             segment_b_len=len(segment_b),
-            target_transition_samples=transition_samples,
         )
 
         report_progress("extraction", 40)
@@ -660,6 +765,12 @@ def generate_draft_transition(
         actual_outro_ms = int(track_a_start / SAMPLE_RATE * 1000)
         actual_intro_ms = int(min_len / SAMPLE_RATE * 1000)
 
+        # CRITICAL: Calculate cut points for seamless playback
+        # track_a_play_until_ms: Stop playing Track A here (transition takes over)
+        # track_b_start_from_ms: Start Track B here AFTER transition ends (skip intro already in transition)
+        track_a_play_until_ms = actual_outro_ms  # Stop Track A at its outro
+        track_b_start_from_ms = actual_intro_ms  # Skip Track B's intro (it's in the transition)
+
         result = DraftTransitionResult(
             draft_id=params.draft_id,
             transition_file_path=params.output_path,
@@ -667,12 +778,16 @@ def generate_draft_transition(
             track_a_outro_ms=actual_outro_ms,
             track_b_intro_ms=actual_intro_ms,
             transition_mode=TransitionMode.STEMS.value,
+            track_a_play_until_ms=track_a_play_until_ms,
+            track_b_start_from_ms=track_b_start_from_ms,
         )
 
         logger.info(
             "Draft transition generated successfully",
             duration_ms=result.transition_duration_ms,
             mode=result.transition_mode,
+            track_a_play_until_ms=track_a_play_until_ms,
+            track_b_start_from_ms=track_b_start_from_ms,
         )
 
         return result
@@ -1054,22 +1169,34 @@ def _apply_limiter(audio: np.ndarray, threshold_db: float = -1.0) -> np.ndarray:
     return audio
 
 
-def _normalize_audio(audio: np.ndarray, target_db: float = -3.0) -> np.ndarray:
-    """Normalize audio to target dB level."""
-    rms = np.sqrt(np.mean(audio ** 2))
+def _normalize_audio(audio: np.ndarray, target_db: float = -1.0) -> np.ndarray:
+    """
+    Normalize audio to target Peak dB level.
+    Avoids RMS normalization which can destroy dynamics of already mastered tracks.
+    """
+    peak = np.max(np.abs(audio))
 
-    if rms == 0:
+    if peak == 0:
         return audio
 
-    target_rms = 10 ** (target_db / 20)
-    scale = target_rms / rms
-    normalized = audio * scale
-
-    # Prevent clipping
-    max_val = np.max(np.abs(normalized))
-    if max_val > 0.99:
-        normalized = normalized * (0.99 / max_val)
-
+    target_peak = 10 ** (target_db / 20)
+    
+    # Only normalize if we are ABOVE the target (limit)
+    # OR if we are significantly below (boost), but be careful not to clip noise
+    # actually, for transitions, we just want to ensure we don't clip.
+    # Mastered tracks are already loud.
+    
+    if peak > target_peak:
+        # Scale down
+        scale = target_peak / peak
+        normalized = audio * scale
+    else:
+        # If quiet, leave it alone or gentle boost?
+        # Better to leave it alone to preserve original quality unless it's very quiet.
+        # But if we mix signals, we might exceed 1.0. 
+        # So we just ensure we are within target_peak.
+        normalized = audio # Don't boost unnecessary
+        
     return normalized
 
 
@@ -1093,37 +1220,93 @@ def _ensure_length_stereo(audio: np.ndarray, target_length: int) -> np.ndarray:
 
 
 def _export_mp3(audio: np.ndarray, sample_rate: int, output_path: str) -> None:
-    """Export audio as MP3 320kbps. Supports stereo [2, samples] or mono [samples]."""
-    from pydub import AudioSegment
+    """Export audio as high-quality MP3 using FFmpeg directly.
+    
+    Uses FFmpeg's libmp3lame encoder with VBR quality 0 (highest quality)
+    for better audio quality than pydub's default export.
+    """
+    import subprocess
+    import tempfile
+    import soundfile as sf
 
     # Ensure directory exists
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    # Determine if stereo or mono
+    # Prepare audio for export
     if audio.ndim == 2:
-        # Stereo: shape [2, samples] -> need to interleave for pydub
-        # pydub expects interleaved: L0, R0, L1, R1, L2, R2, ...
+        # Convert from [channels, samples] to [samples, channels] for soundfile
+        audio_export = audio.T
         num_channels = 2
-        # Transpose to [samples, 2] then flatten to interleaved
-        audio_interleaved = audio.T.flatten()
-        audio_16bit = (audio_interleaved * 32767).astype(np.int16)
     else:
-        # Mono: shape [samples]
+        audio_export = audio
         num_channels = 1
-        audio_16bit = (audio * 32767).astype(np.int16)
 
-    # Create AudioSegment from raw data
-    audio_segment = AudioSegment(
-        data=audio_16bit.tobytes(),
-        sample_width=2,  # 16-bit
-        frame_rate=sample_rate,
-        channels=num_channels
-    )
+    # Clip to prevent distortion
+    audio_export = np.clip(audio_export, -1.0, 1.0)
 
-    # Export as MP3 320kbps
-    audio_segment.export(output_path, format='mp3', bitrate='320k')
+    # Write to temp WAV file (32-bit float for max quality)
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_wav:
+        tmp_wav_path = tmp_wav.name
+        sf.write(tmp_wav_path, audio_export, sample_rate, subtype='FLOAT')
 
-    logger.info("Transition exported as MP3", path=output_path, channels=num_channels)
+    # Convert to MP3 with FFmpeg - use VBR quality 0 (highest quality) or CBR 320k
+    with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as tmp_mp3:
+        tmp_mp3_path = tmp_mp3.name
+
+    try:
+        # Use FFmpeg with libmp3lame, CBR 320kbps for maximum compatibility + quality
+        result = subprocess.run(
+            [
+                'ffmpeg', '-y',
+                '-f', 'wav', '-i', tmp_wav_path,
+                '-c:a', 'libmp3lame',
+                '-b:a', '320k',
+                '-q:a', '0',  # Highest quality encoding
+                '-f', 'mp3',
+                tmp_mp3_path
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            logger.warning("FFmpeg encoding issues", stderr=result.stderr[-500:] if result.stderr else "")
+
+        # Move to final destination
+        Path(tmp_mp3_path).replace(output_path)
+
+        logger.info("Transition exported as MP3 (FFmpeg)", path=output_path, channels=num_channels)
+
+    except Exception as e:
+        logger.error("FFmpeg export failed, using fallback", error=str(e))
+        # Fallback to pydub if FFmpeg fails
+        from pydub import AudioSegment
+
+        # CRITICAL: Clip before int16 conversion
+        audio_clipped = np.clip(audio_export, -1.0, 1.0)
+        if audio_clipped.ndim == 2:
+            # Interleave for pydub
+            audio_interleaved = audio_clipped.flatten('C')
+        else:
+            audio_interleaved = audio_clipped
+        audio_16bit = (audio_interleaved * 32767).astype(np.int16)
+
+        audio_segment = AudioSegment(
+            data=audio_16bit.tobytes(),
+            sample_width=2,
+            frame_rate=sample_rate,
+            channels=num_channels
+        )
+        audio_segment.export(output_path, format='mp3', bitrate='320k')
+        logger.info("Transition exported as MP3 (pydub fallback)", path=output_path)
+
+    finally:
+        # Cleanup temp files
+        try:
+            Path(tmp_wav_path).unlink(missing_ok=True)
+            Path(tmp_mp3_path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def generate_draft_transition_from_job(job_data: dict, progress_callback=None) -> dict:
@@ -1373,15 +1556,23 @@ def generate_draft_transition_with_plan(
             progress_callback(step, progress)
         logger.info(f"Progress: {step} - {progress}%")
 
+    # TYPE SAFETY: Ensure parameters are correct types
+    # Explicitly cast to float to prevent TypeError if strings are passed
+    if params.track_a_beats:
+        params.track_a_beats = [float(b) for b in params.track_a_beats]
+    if params.track_b_beats:
+        params.track_b_beats = [float(b) for b in params.track_b_beats]
+    
     transition_config = plan.get("transition", {})
     transition_type = transition_config.get("type", "STEM_BLEND")
 
     logger.info(
         "Generating LLM-planned draft transition (ENHANCED)",
-        draft_id=params.draft_id,
-        transition_type=transition_type,
+        draft_id=str(params.draft_id),
+        transition_type=str(transition_type),
         duration_bars=transition_config.get("duration_bars"),
     )
+
 
     # Handle FILTER_SWEEP type - NEW!
     if transition_type == "FILTER_SWEEP":
@@ -1428,10 +1619,75 @@ def generate_draft_transition_with_plan(
             duration_ms=transition_duration_ms,
         )
 
-        # Extract segments
-        track_a_start = max(0, len(audio_a) - transition_samples)
-        segment_a = audio_a[track_a_start:]
-        segment_b = audio_b[:transition_samples]
+        # Extract segments (with beat alignment and safety check)
+        
+        # Track A: Find downbeat near outro start (or end of track if not set)
+        track_a_duration_s = len(audio_a) / SAMPLE_RATE
+        reference_time_a = track_a_duration_s - (transition_duration_ms / 1000.0)
+        
+        if params.track_a_outro_start_ms > 0:
+            outro_start_s = params.track_a_outro_start_ms / 1000.0
+            # Ensure we have enough audio after the cue point
+            if outro_start_s + (transition_duration_ms / 1000.0) <= track_a_duration_s:
+                reference_time_a = outro_start_s
+        
+        a_cue_time, a_cue_beat_idx = _find_cue_point(
+            reference_time_a,
+            params.track_a_beats,
+            'before' # Prefer starting transition slightly before or at the perfect point
+        )
+
+        # Truncation Safety Check (Robust Sample-Based)
+        while True:
+            track_a_start_candidate = int(a_cue_time * SAMPLE_RATE)
+            end_sample = track_a_start_candidate + transition_samples
+            max_samples = len(audio_a)
+            
+            logger.info(
+                "Checking cue point safety (LLM)",
+                cue_time=a_cue_time,
+                start_sample=track_a_start_candidate,
+                end_sample=end_sample,
+                max_samples=max_samples,
+                overflow=end_sample - max_samples
+            )
+            
+            if end_sample <= max_samples:
+                break
+                
+            logger.warning("Cue point truncation in LLM plan, shifting back")
+            
+            if a_cue_beat_idx >= 16:
+                a_cue_beat_idx -= 16
+                if a_cue_beat_idx < len(params.track_a_beats):
+                    a_cue_time = params.track_a_beats[a_cue_beat_idx]
+                else:
+                    a_cue_time -= (bars_to_ms(4, params.track_a_bpm) / 1000.0)
+            else:
+                 a_cue_time -= (bars_to_ms(4, params.track_a_bpm) / 1000.0)
+            
+            if a_cue_time < 0:
+                a_cue_time = 0
+                break
+
+        # Track B: Find downbeat near start (or intro end)
+        b_cue_time_original, b_cue_beat_idx = _find_cue_point(
+            0.0,
+            params.track_b_beats,
+            'after'
+        )
+
+        track_a_start = int(a_cue_time * SAMPLE_RATE)
+        track_b_start = int(b_cue_time_original * SAMPLE_RATE)
+
+        # Extract Track A
+        a_segment_end = min(track_a_start + transition_samples, len(audio_a))
+        segment_a = audio_a[track_a_start:a_segment_end]
+        
+        # Extract Track B (with buffer for stretch)
+        samples_needed_b = int(transition_samples * 1.1)
+        b_segment_end = min(track_b_start + samples_needed_b, len(audio_b))
+        segment_b = audio_b[track_b_start:b_segment_end]
 
         report_progress("extraction", 40)
         report_progress("time-stretch", 0)
@@ -1641,8 +1897,24 @@ def generate_draft_transition_with_plan(
             track_b_start_from_ms=track_b_start_from_ms,
         )
 
+        return DraftTransitionResult(
+            draft_id=params.draft_id,
+            transition_file_path=params.output_path,
+            transition_duration_ms=int(len(transition_audio) / SAMPLE_RATE * 1000),
+            track_a_outro_ms=actual_outro_ms,
+            track_b_intro_ms=actual_intro_ms,
+            transition_mode=TransitionMode.STEMS.value,
+            track_a_play_until_ms=track_a_play_until_ms,
+            track_b_start_from_ms=track_b_start_from_ms,
+        )
+
     except Exception as e:
-        logger.error("LLM-planned stem transition failed, falling back", error=str(e))
+        import traceback
+        logger.error(f"LLM-planned stem transition failed with error: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Fallback
+        logger.info("Falling back to crossfade due to error")
         avg_energy = (params.track_a_energy + params.track_b_energy) / 2
         transition_bars = calculate_transition_bars(avg_energy)
         return _generate_crossfade_fallback(params, transition_bars, progress_callback, str(e))
@@ -2218,28 +2490,49 @@ def _generate_hard_cut_with_plan_enhanced(
     # FIXED: Extract segments correctly to avoid duplication
     # segment_a: from outro_start to end of track (the outro portion)
     # For HARD_CUT, we only need a small tail with effects
-    tail_duration_s = 2.0  # 2 seconds of tail with reverb/effects
+    # FIXED: Extract segments with context for effect processing
+    # segment_a: must include some audio BEFORE the cut to generate a reverb tail
+    # Double duration to 4s to address "too short" feedback
+    context_duration_s = 4.0 
+    context_samples = int(context_duration_s * SAMPLE_RATE)
+    tail_duration_s = 4.0  
     tail_samples = int(tail_duration_s * SAMPLE_RATE)
 
-    # Start from outro_start, take only a small portion for the cut
-    start_a = min(outro_start_sample, audio_a.shape[1] - tail_samples)
-    start_a = max(0, start_a)
-    end_a = min(start_a + tail_samples, audio_a.shape[1])
-    segment_a = audio_a[:, start_a:end_a]
-
-    # segment_b: from entry_point to intro_end (the intro portion that the player will skip)
-    # This is the audio that replaces Track B's intro in the transition
+    # Calculate ranges
+    # We want: [Context (2s)] --CUT-- [Tail (2s)]
+    # The output transition will only contain the Tail part
+    
+    # 1. Start point (start of context)
+    # If outro_start is valid, go back context_samples
+    if outro_start_sample < (audio_a.shape[1] * 0.1):
+         # Fallback for missing cue: end of track - tail
+         effective_cut_sample = max(0, audio_a.shape[1] - tail_samples)
+    else:
+         effective_cut_sample = min(outro_start_sample, audio_a.shape[1])
+    
+    start_a_context = max(0, effective_cut_sample - context_samples)
+    end_a_tail = min(effective_cut_sample + tail_samples, audio_a.shape[1])
+    
+    # Load the full chunk (Context + Potential Tail)
+    segment_a_full = audio_a[:, start_a_context:end_a_tail]
+    
+    # Calculate where the cut is relative to this chunk
+    # If we hit start of file, cut_index might be less than context_samples
+    cut_index_in_segment = effective_cut_sample - start_a_context
+    
+    # For segment_b, same logic
     entry_sample = max(0, entry_sample)
     end_b = min(intro_end_sample, audio_b.shape[1])
-    end_b = max(end_b, entry_sample + int(2.0 * SAMPLE_RATE))  # At least 2 seconds
+    end_b = max(end_b, entry_sample + int(2.0 * SAMPLE_RATE))
     segment_b = audio_b[:, entry_sample:end_b]
 
     logger.info(
         "HARD_CUT segments extracted",
-        segment_a_duration_s=segment_a.shape[1] / SAMPLE_RATE,
+        segment_a_full_duration_s=segment_a_full.shape[1] / SAMPLE_RATE,
         segment_b_duration_s=segment_b.shape[1] / SAMPLE_RATE,
         outro_start_s=outro_start_s,
         intro_end_s=intro_end_s,
+        cut_index_in_segment=cut_index_in_segment,
     )
 
     report_progress("effects", 0)
@@ -2257,7 +2550,8 @@ def _generate_hard_cut_with_plan_enhanced(
     if effect_type == "none":
         logger.info("Applying DEFAULT reverb for HARD_CUT transition")
         effect_type = "reverb"
-        effect_a_config = {"type": "reverb", "params": {"room_size": 0.8, "decay": 2.0}}
+        # Increased decay to 4.0s to match longer tail
+        effect_a_config = {"type": "reverb", "params": {"room_size": 0.8, "decay": 4.0}}
 
     if effect_type == "reverb":
         logger.info("Applying reverb tail to track A exit", effect_params=effect_a_config.get("params", {}))
@@ -2270,32 +2564,63 @@ def _generate_hard_cut_with_plan_enhanced(
             room_size = size_map.get(raw_size.lower(), 0.7)
         else:
             room_size = float(raw_size)
-        decay = float(effect_params.get("decay", 2.0))
+        decay = float(effect_params.get("decay", 4.0))
 
         # Process each channel
-        for ch in range(segment_a.shape[0]):
-            segment_a[ch] = create_reverb_tail(
-                audio=segment_a[ch],
-                tail_start_sample=max(0, segment_a.shape[1] - int(2.0 * SAMPLE_RATE)),
+        # We process the FULL segment (context + tail)
+        # But we want the tail to start fading out at the CUT point
+        processed_channels = []
+        for ch in range(segment_a_full.shape[0]):
+            processed = create_reverb_tail(
+                audio=segment_a_full[ch],
+                tail_start_sample=cut_index_in_segment, # Start tail at the cut
                 room_size=room_size,
                 decay=decay,
                 fade_out_duration=1.5,
                 sr=SAMPLE_RATE
-            )[:segment_a.shape[1]]  # Trim to original length
+            )
+            processed_channels.append(processed)
+        
+        # Stack back to stereo/multi-channel
+        segment_a_processed = np.stack(processed_channels)
+        
+        # NOW, slice to only keep the tail part for the transition file
+        # We want audio starting FROM the cut point
+        segment_a = segment_a_processed[:, cut_index_in_segment:]
+        
+        # Ensure it's not too long (limit to tail_samples)
+        if segment_a.shape[1] > tail_samples:
+            segment_a = segment_a[:, :tail_samples]
 
     elif effect_type == "delay":
         logger.info("Applying delay tail to track A exit", effect_params=effect_a_config.get("params", {}))
         effect_params = effect_a_config.get("params", {})
-        for ch in range(segment_a.shape[0]):
-            segment_a[ch] = create_delay_tail(
-                audio=segment_a[ch],
-                tail_start_sample=max(0, segment_a.shape[1] - int(2.0 * SAMPLE_RATE)),
+        processed_channels = []
+        for ch in range(segment_a_full.shape[0]):
+            processed = create_delay_tail(
+                audio=segment_a_full[ch],
+                tail_start_sample=cut_index_in_segment,
                 bpm=bpm,
                 beat_fraction=effect_params.get("beat_fraction", 0.5),
                 feedback=effect_params.get("feedback", 0.4),
                 fade_out_duration=2.0,
                 sr=SAMPLE_RATE
-            )[:segment_a.shape[1]]
+            )
+            processed_channels.append(processed)
+        segment_a_processed = np.stack(processed_channels)
+        segment_a = segment_a_processed[:, cut_index_in_segment:]
+        if segment_a.shape[1] > tail_samples:
+            segment_a = segment_a[:, :tail_samples]
+            
+    else:
+        # No effect: just take the part after the cut (raw audio)
+        # This effectively plays the "tail" of the track raw
+        segment_a = segment_a_full[:, cut_index_in_segment:]
+        if segment_a.shape[1] > tail_samples:
+             segment_a = segment_a[:, :tail_samples]
+
+    report_progress("effects", 100)
+    report_progress("mixing", 0)
 
     report_progress("effects", 100)
     report_progress("mixing", 0)
@@ -2341,8 +2666,9 @@ def _generate_hard_cut_with_plan_enhanced(
     # Calculate cut points for seamless playback
     # track_a_play_until_ms: where to stop playing Track A (transition takes over)
     # track_b_start_from_ms: where to start playing Track B (after transition ends)
-    track_a_play_until_ms = int(start_a / SAMPLE_RATE * 1000)
-    track_b_start_from_ms = int((end_b - entry_sample) / SAMPLE_RATE * 1000)
+    # Calculate cut points for seamless playback
+    track_a_play_until_ms = int(effective_cut_sample / SAMPLE_RATE * 1000)
+    track_b_start_from_ms = int(end_b / SAMPLE_RATE * 1000)
 
     logger.info(
         "ENHANCED hard cut transition generated",
@@ -2358,7 +2684,7 @@ def _generate_hard_cut_with_plan_enhanced(
         transition_file_path=params.output_path,
         transition_duration_ms=transition_duration_ms,
         track_a_outro_ms=int(cut_time_s * 1000),
-        track_b_intro_ms=int(entry_time_s * 1000),
+        track_b_intro_ms=track_b_start_from_ms, # FIXED: Resume from end of cut, not start
         transition_mode="HARD_CUT",
         track_a_play_until_ms=track_a_play_until_ms,
         track_b_start_from_ms=track_b_start_from_ms,

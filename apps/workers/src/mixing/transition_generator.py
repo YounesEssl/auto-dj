@@ -466,7 +466,7 @@ def _save_audio(audio: np.ndarray, sample_rate: int, path: str) -> None:
     logger.info("Transition audio saved", path=path)
 
 
-def generate_transition_from_job(job_data: dict) -> dict:
+def generate_transition_from_job(job_data: dict, progress_callback: Optional[callable] = None) -> dict:
     """
     Generate transition from job payload.
 
@@ -475,6 +475,7 @@ def generate_transition_from_job(job_data: dict) -> dict:
 
     Args:
         job_data: Job payload containing transition parameters
+        progress_callback: Optional callback for progress updates (stage, progress_percent)
 
     Returns:
         Dict with transition result info
@@ -483,59 +484,56 @@ def generate_transition_from_job(job_data: dict) -> dict:
     project_id = job_data['projectId']
     transition_id = job_data['transitionId']
     output_dir = Path(settings.output_path) / 'transitions' / project_id
-    output_path = str(output_dir / f'{transition_id}.wav')
+    output_path = str(output_dir / f'{transition_id}.mp3')
 
-    # Check if we have extended data for LLM planning
-    llm_plan = None
-    if _has_llm_planning_data(job_data):
-        llm_plan = _get_llm_transition_plan(job_data)
-        if llm_plan:
-            logger.info(
-                "Using LLM transition plan",
-                transition_type=llm_plan.get("transition", {}).get("type"),
-                confidence=llm_plan.get("confidence")
-            )
-
-    params = TransitionParams(
-        from_track_path=settings.get_absolute_path(job_data['fromTrackPath']),
-        to_track_path=settings.get_absolute_path(job_data['toTrackPath']),
-        from_track_bpm=job_data['fromTrackBpm'],
-        to_track_bpm=job_data['toTrackBpm'],
-        from_track_beats=job_data['fromTrackBeats'],
-        to_track_beats=job_data['toTrackBeats'],
-        from_track_outro_start=job_data['fromTrackOutroStart'],
-        to_track_intro_end=job_data['toTrackIntroEnd'],
-        output_path=output_path,
+    # UNIFIED ENGINE: Delegate to Draft Transition Generator
+    # This ensures previews match drafts exactly (Smart Cuts, Bass Swaps, etc.)
+    from src.mixing.draft_transition_generator import (
+        generate_draft_transition, 
+        DraftTransitionParams,
+        DraftTransitionResult
     )
 
-    # Generate transition using LLM plan if available
-    transition_type = llm_plan.get("transition", {}).get("type") if llm_plan else None
+    # Map job data to DraftTransitionParams
+    params = DraftTransitionParams(
+        draft_id=f"preview_{transition_id}",
+        track_a_path=settings.get_absolute_path(job_data['fromTrackPath']),
+        track_b_path=settings.get_absolute_path(job_data['toTrackPath']),
+        track_a_bpm=job_data['fromTrackBpm'],
+        track_b_bpm=job_data['toTrackBpm'],
+        track_a_beats=job_data['fromTrackBeats'],
+        track_b_beats=job_data['toTrackBeats'],
+        track_a_outro_start_ms=int(job_data['fromTrackOutroStart'] * 1000) if isinstance(job_data['fromTrackOutroStart'], float) else job_data['fromTrackOutroStart'],
+        track_b_intro_end_ms=int(job_data['toTrackIntroEnd'] * 1000) if isinstance(job_data['toTrackIntroEnd'], float) else job_data['toTrackIntroEnd'],
+        track_a_energy=job_data.get('fromTrackEnergy', 0.5),
+        track_b_energy=job_data.get('toTrackEnergy', 0.5),
+        track_a_duration_ms=int(job_data.get('fromTrackDuration', 300) * 1000),
+        track_b_duration_ms=int(job_data.get('toTrackDuration', 300) * 1000),
+        output_path=output_path
+    )
 
-    if llm_plan and transition_type == "STEM_BLEND":
-        result = generate_transition_with_plan(params, llm_plan)
-    elif llm_plan and transition_type == "HARD_CUT":
-        result = generate_hard_cut_transition(params, llm_plan)
-    elif llm_plan and transition_type == "CROSSFADE":
-        result = generate_crossfade_transition(params, llm_plan)
-    elif llm_plan and transition_type == "FILTER_SWEEP":
-        result = generate_filter_sweep_transition(params, llm_plan)
-    elif llm_plan and transition_type == "ECHO_OUT":
-        result = generate_echo_out_transition(params, llm_plan)
-    else:
-        # Fallback to default 4-phase transition
-        result = generate_transition(params)
+    logger.info("Delegating preview to Draft Engine", transition_id=transition_id)
 
-    # Return relative path for storage
-    relative_path = f'transitions/{project_id}/{transition_id}.wav'
+    # Use provided callback or fallback to logging
+    callback = progress_callback if progress_callback else lambda msg, pct: logger.info(f"Progress: {pct}% - {msg}")
+
+    # Generate using Unified Draft Engine
+    result: DraftTransitionResult = generate_draft_transition(
+        params,
+        progress_callback=callback
+    )
+
+    # Return relative path for storage (MP3 extension)
+    relative_path = f'transitions/{project_id}/{transition_id}.mp3'
 
     return {
         'transitionId': transition_id,
         'audioFilePath': relative_path,
-        'audioDurationMs': result.duration_ms,
-        'trackACutMs': result.track_a_cut_ms,
-        'trackBStartMs': result.track_b_start_ms,
-        'llmPlanUsed': llm_plan is not None,
-        'transitionType': llm_plan.get("transition", {}).get("type") if llm_plan else "STEM_BLEND",
+        'audioDurationMs': result.transition_duration_ms,
+        'trackACutMs': result.track_a_play_until_ms,
+        'trackBStartMs': result.track_b_start_from_ms,
+        'llmPlanUsed': True, # Draft engine always uses LLM/Smart logic
+        'transitionType': result.transition_mode,
     }
 
 

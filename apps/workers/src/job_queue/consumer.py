@@ -3,19 +3,50 @@ Job consumer for processing audio analysis, transitions, and mixing jobs using B
 """
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Callable
 
 import structlog
 from bullmq import Worker
 
 from src.config import settings
-from src.job_queue.publisher import publish_result
+from src.job_queue.publisher import publish_result, publish_progress
 from src.analysis.analyzer import analyze_track
 from src.mixing.mix_generator import generate_mix_for_project
 from src.mixing.transition_generator import generate_transition_from_job
 from src.mixing.draft_transition_generator import generate_draft_transition_from_job
 
 logger = structlog.get_logger()
+
+
+def create_progress_callback(
+    loop: asyncio.AbstractEventLoop,
+    project_id: Optional[str] = None,
+    transition_id: Optional[str] = None,
+    draft_id: Optional[str] = None,
+) -> Callable[[str, int], None]:
+    """
+    Create a progress callback that publishes to Redis.
+
+    This callback can be called from synchronous code (thread pool)
+    and will schedule the async publish on the event loop.
+    """
+    def callback(stage: str, progress: int) -> None:
+        message = f"{stage.replace('-', ' ').title()} - {progress}%"
+
+        # Schedule the async publish on the event loop
+        asyncio.run_coroutine_threadsafe(
+            publish_progress(
+                project_id=project_id,
+                transition_id=transition_id,
+                draft_id=draft_id,
+                stage=stage,
+                progress=progress,
+                message=message,
+            ),
+            loop
+        )
+
+    return callback
 
 
 async def process_analyze_job(job_data: Dict[str, Any], job_id: str) -> Dict[str, Any]:
@@ -93,18 +124,32 @@ async def process_transition_job(job_data: Dict[str, Any], job_id: str) -> Dict[
     )
 
     try:
-        # Run transition generation in thread pool
+        # Create progress callback that publishes to Redis
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, generate_transition_from_job, job_data
+        progress_callback = create_progress_callback(
+            loop=loop,
+            project_id=project_id,
+            transition_id=transition_id,
         )
+
+        # Run transition generation in thread pool with progress callback
+        result = await loop.run_in_executor(
+            None, lambda: generate_transition_from_job(job_data, progress_callback)
+        )
+
+        # Convert dataclass to dict for serialization
+        if hasattr(result, '__dataclass_fields__'):
+            from dataclasses import asdict
+            result_dict = asdict(result)
+        else:
+            result_dict = result
 
         # Publish result back to API
         await publish_result(
             result_type="transition_audio",
             project_id=project_id,
             transition_id=transition_id,
-            result=result,
+            result=result_dict,
         )
 
         logger.info("Transition generation complete", transition_id=transition_id)
@@ -198,17 +243,30 @@ async def process_draft_transition_job(job_data: Dict[str, Any], job_id: str) ->
     )
 
     try:
-        # Run draft transition generation in thread pool
+        # Create progress callback that publishes to Redis
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, generate_draft_transition_from_job, job_data
+        progress_callback = create_progress_callback(
+            loop=loop,
+            draft_id=draft_id,
         )
+
+        # Run draft transition generation in thread pool with progress callback
+        result = await loop.run_in_executor(
+            None, lambda: generate_draft_transition_from_job(job_data, progress_callback)
+        )
+
+        # Convert dataclass to dict for serialization
+        if hasattr(result, '__dataclass_fields__'):
+            from dataclasses import asdict
+            result_dict = asdict(result)
+        else:
+            result_dict = result
 
         # Publish result back to API
         await publish_result(
             result_type="draft_transition",
             draft_id=draft_id,
-            result=result,
+            result=result_dict,
         )
 
         logger.info("Draft transition generation complete", draft_id=draft_id)

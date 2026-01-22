@@ -2,50 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Midnight Studio Theme - Professional audio studio aesthetic */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 262.1 83.3% 57.8%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 262.1 83.3% 57.8%;
-    --radius: 0.5rem;
-  }
+    /* Dark by default - studio atmosphere */
+    --background: 220 20% 6%;
+    --foreground: 210 20% 92%;
+    --card: 220 18% 9%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 20% 8%;
+    --popover-foreground: 210 20% 92%;
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 263.4 70% 50.4%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 263.4 70% 50.4%;
+    /* Primary - Warm amber/gold like VU meters */
+    --primary: 38 95% 55%;
+    --primary-foreground: 220 20% 6%;
+
+    /* Secondary - Cool studio metal */
+    --secondary: 220 14% 14%;
+    --secondary-foreground: 210 20% 85%;
+
+    /* Muted - Soft studio grays */
+    --muted: 220 14% 12%;
+    --muted-foreground: 215 15% 55%;
+
+    /* Accent - Cyan LED indicator */
+    --accent: 185 70% 45%;
+    --accent-foreground: 220 20% 6%;
+
+    /* Status colors */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 20% 98%;
+    --success: 142 70% 45%;
+    --success-foreground: 220 20% 6%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 220 20% 6%;
+
+    /* Borders & inputs */
+    --border: 220 14% 16%;
+    --input: 220 14% 14%;
+    --ring: 38 95% 55%;
+
+    /* Radius - Slightly rounded, hardware-like */
+    --radius: 0.375rem;
+
+    /* Studio-specific tokens */
+    --glow-primary: 38 95% 55%;
+    --glow-accent: 185 70% 45%;
+    --surface-raised: 220 16% 11%;
+    --surface-sunken: 220 22% 5%;
+    --led-on: 142 80% 50%;
+    --led-off: 142 20% 20%;
+    --vu-green: 142 70% 45%;
+    --vu-yellow: 48 95% 53%;
+    --vu-red: 0 72% 51%;
+    --waveform: 185 70% 45%;
   }
 }
 
@@ -54,9 +64,138 @@
     @apply border-border;
   }
 
+  html {
+    color-scheme: dark;
+    height: 100%;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--primary) / 0.05), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--accent) / 0.03), transparent);
+    min-height: 100%;
+    height: 100%;
+    margin: 0;
+  }
+
+  #root {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Custom selection color */
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer components {
+  /* Studio glass panel effect */
+  .studio-panel {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 shadow-2xl;
+    box-shadow:
+      0 0 0 1px hsl(var(--border) / 0.5),
+      0 25px 50px -12px hsl(220 20% 0% / 0.5),
+      inset 0 1px 0 0 hsl(var(--foreground) / 0.03);
+  }
+
+  /* VU meter LED strip */
+  .vu-meter {
+    @apply h-1 rounded-full;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--vu-green)) 0%,
+      hsl(var(--vu-green)) 60%,
+      hsl(var(--vu-yellow)) 75%,
+      hsl(var(--vu-red)) 100%
+    );
+  }
+
+  /* Glowing button effect */
+  .btn-glow {
+    @apply relative overflow-hidden;
+    box-shadow:
+      0 0 20px -5px hsl(var(--primary) / 0.5),
+      inset 0 1px 0 0 hsl(var(--foreground) / 0.1);
+  }
+
+  .btn-glow:hover {
+    box-shadow:
+      0 0 30px -5px hsl(var(--primary) / 0.7),
+      inset 0 1px 0 0 hsl(var(--foreground) / 0.15);
+  }
+
+  /* Hardware knob styling */
+  .knob {
+    @apply rounded-full bg-gradient-to-b from-[hsl(220,14%,18%)] to-[hsl(220,14%,10%)];
+    box-shadow:
+      0 2px 4px hsl(220 20% 0% / 0.5),
+      inset 0 1px 0 hsl(var(--foreground) / 0.05);
+  }
+
+  /* LED indicator */
+  .led {
+    @apply w-2 h-2 rounded-full;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .led-on {
+    @apply bg-[hsl(var(--led-on))];
+    box-shadow: 0 0 12px hsl(var(--led-on));
+  }
+
+  .led-off {
+    @apply bg-[hsl(var(--led-off))];
+  }
+
+  /* Waveform visualization glow */
+  .waveform-glow {
+    filter: drop-shadow(0 0 8px hsl(var(--waveform) / 0.5));
+  }
+
+  /* Track slot container */
+  .track-slot {
+    @apply bg-surface-sunken rounded-lg border border-border/30;
+    background-image:
+      repeating-linear-gradient(
+        90deg,
+        hsl(var(--border) / 0.1) 0px,
+        hsl(var(--border) / 0.1) 1px,
+        transparent 1px,
+        transparent 8px
+      );
+  }
+
+  /* Subtle text glow */
+  .text-glow {
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+
+  /* Animated gradient border */
+  .gradient-border {
+    position: relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary) / 0.5),
+      hsl(var(--accent) / 0.3),
+      hsl(var(--primary) / 0.2)
+    );
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
   }
 }
 
@@ -68,5 +207,61 @@
 
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Custom scrollbar for studio feel */
+  .scrollbar-studio {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-studio::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-studio::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-studio::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  .scrollbar-studio::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Animation utilities */
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes glow {
+    from {
+      box-shadow: 0 0 20px -5px hsl(var(--primary) / 0.3);
+    }
+    to {
+      box-shadow: 0 0 30px -5px hsl(var(--primary) / 0.6);
+    }
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Backdrop blur levels */
+  .backdrop-studio {
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* Surface elevation */
+  .surface-raised {
+    background-color: hsl(var(--surface-raised));
+  }
+
+  .surface-sunken {
+    background-color: hsl(var(--surface-sunken));
   }
 }

@@ -13,7 +13,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { createReadStream, statSync } from 'fs';
+import { createReadStream, statSync, existsSync } from 'fs';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -27,8 +27,10 @@ import type { User } from '@autodj/database';
 import { v4 as uuidv4 } from 'uuid';
 
 import { TracksService } from './tracks.service';
+import { MetadataService } from './metadata.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { StorageService } from '../storage/storage.service';
 import { QueueService } from '../queue/queue.service';
 import { ProjectsService } from '../projects/projects.service';
@@ -56,6 +58,7 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 export class TracksController {
   constructor(
     private readonly tracksService: TracksService,
+    private readonly metadataService: MetadataService,
     private readonly storageService: StorageService,
     private readonly queueService: QueueService,
     @Inject(forwardRef(() => ProjectsService))
@@ -136,7 +139,10 @@ export class TracksController {
         `projects/${projectId}/${filename}`
       );
 
-      // Create track record
+      // Extract metadata from the saved file
+      const metadata = await this.metadataService.extractMetadata(filePath, projectId);
+
+      // Create track record with metadata
       const track = await this.tracksService.create({
         projectId,
         filename,
@@ -144,6 +150,13 @@ export class TracksController {
         filePath,
         fileSize: file.size,
         mimeType: file.mimetype,
+        duration: metadata.duration,
+        metaTitle: metadata.title,
+        metaArtist: metadata.artist,
+        metaAlbum: metadata.album,
+        metaGenre: metadata.genre,
+        metaYear: metadata.year,
+        coverPath: metadata.coverPath,
       });
 
       uploadedTracks.push(track);
@@ -200,22 +213,26 @@ export class TracksController {
   }
 
   /**
-   * Stream track audio file
+   * Stream track audio file (public for audio element access)
    */
+  @Public()
   @Get(':trackId/audio')
   @ApiOperation({ summary: 'Stream track audio file' })
   @ApiResponse({ status: 200, description: 'Audio stream' })
   @ApiResponse({ status: 404, description: 'Track not found' })
   async streamAudio(
-    @CurrentUser() user: User,
     @Param('projectId') projectId: string,
     @Param('trackId') trackId: string,
     @Res() res: Response
   ): Promise<void> {
-    // Verify user owns the project
-    await this.projectsService.findByIdAndUser(projectId, user.id);
-
     const track = await this.tracksService.findById(trackId);
+
+    // Verify track belongs to project
+    if (track.projectId !== projectId) {
+      res.status(404).json({ error: 'Track not found' });
+      return;
+    }
+
     // filePath is already absolute in the database
     const absolutePath = track.filePath;
 
@@ -256,5 +273,59 @@ export class TracksController {
     await this.tracksService.delete(trackId);
 
     return { message: 'Track deleted successfully' };
+  }
+
+  /**
+   * Stream track cover image (public endpoint)
+   */
+  @Public()
+  @Get(':trackId/cover')
+  @ApiOperation({ summary: 'Get track cover art' })
+  @ApiResponse({ status: 200, description: 'Cover image' })
+  @ApiResponse({ status: 404, description: 'Cover not found' })
+  async getCover(
+    @Param('projectId') projectId: string,
+    @Param('trackId') trackId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const track = await this.tracksService.findById(trackId);
+
+    // Verify track belongs to the project
+    if (track.projectId !== projectId) {
+      res.status(404).json({ error: 'Track not found' });
+      return;
+    }
+
+    if (!track.coverPath) {
+      res.status(404).json({ error: 'No cover art available' });
+      return;
+    }
+
+    const storagePath = process.env.STORAGE_PATH || '/app/storage';
+    const absolutePath = `${storagePath}/${track.coverPath}`;
+
+    if (!existsSync(absolutePath)) {
+      res.status(404).json({ error: 'Cover file not found' });
+      return;
+    }
+
+    const stat = statSync(absolutePath);
+    const ext = track.coverPath.split('.').pop()?.toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+    };
+
+    res.set({
+      'Content-Type': mimeTypes[ext || 'jpg'] || 'image/jpeg',
+      'Content-Length': stat.size,
+      'Cache-Control': 'public, max-age=31536000',
+    });
+
+    const file = createReadStream(absolutePath);
+    file.pipe(res);
   }
 }

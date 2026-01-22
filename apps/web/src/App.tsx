@@ -5,16 +5,12 @@ import { Layout } from '@/components/layout/Layout';
 import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { ProjectPage } from '@/pages/ProjectPage';
-import { NewProjectPage } from '@/pages/NewProjectPage';
-import { DraftsListPage } from '@/pages/DraftsListPage';
-import { NewDraftPage } from '@/pages/NewDraftPage';
-import { DraftPage } from '@/pages/DraftPage';
+import { StudioPage } from '@/pages/StudioPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 /**
  * Main application component with routing
+ * Refactored to use unified Mix Studio instead of separate pages
  */
 function App() {
   return (
@@ -24,17 +20,15 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Main app routes with layout */}
+        {/* Landing page with layout */}
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="projects/new" element={<NewProjectPage />} />
-          <Route path="projects/:id" element={<ProjectPage />} />
-          <Route path="drafts" element={<DraftsListPage />} />
-          <Route path="drafts/new" element={<NewDraftPage />} />
-          <Route path="drafts/:id" element={<DraftPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        {/* Studio routes (standalone, no layout wrapper) */}
+        <Route path="/studio" element={<StudioPage />} />
+        <Route path="/studio/:id" element={<StudioPage />} />
       </Routes>
       <Toaster position="bottom-right" richColors />
     </>

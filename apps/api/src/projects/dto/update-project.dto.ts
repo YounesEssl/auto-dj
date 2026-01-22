@@ -1,4 +1,4 @@
-import { IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
+import { IsString, MinLength, MaxLength, IsOptional, IsArray } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -16,4 +16,14 @@ export class UpdateProjectDto {
   @MinLength(1, { message: 'Project name cannot be empty' })
   @MaxLength(200, { message: 'Project name must not exceed 200 characters' })
   name?: string;
+
+  @ApiPropertyOptional({
+    example: ['track-uuid-1', 'track-uuid-2', 'track-uuid-3'],
+    description: 'Ordered array of track IDs for manual arrangement',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true, message: 'Each track ID must be a string' })
+  orderedTracks?: string[];
 }

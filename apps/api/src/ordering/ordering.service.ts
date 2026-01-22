@@ -129,6 +129,110 @@ export class OrderingService {
   }
 
   /**
+   * Recalculate transitions for a manually specified track order
+   * Used when user manually reorders tracks in the timeline
+   */
+  async recalculateTransitionsForOrder(projectId: string, orderedTrackIds: string[]): Promise<{
+    transitions: Transition[];
+    averageScore: number;
+  }> {
+    this.logger.log(`Recalculating transitions for manual order: ${projectId}`);
+
+    if (orderedTrackIds.length < 2) {
+      // Not enough tracks for transitions
+      await prisma.transition.deleteMany({ where: { projectId } });
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { averageMixScore: 0 },
+      });
+      return { transitions: [], averageScore: 0 };
+    }
+
+    // Get tracks with analysis
+    const tracks = await prisma.track.findMany({
+      where: { id: { in: orderedTrackIds } },
+      include: { analysis: true },
+    });
+
+    // Build a map for quick lookup
+    const trackMap = new Map(tracks.map(t => [t.id, t]));
+
+    // Build ordered tracks with analysis
+    const orderedTracks: TrackWithAnalysis[] = [];
+    for (const trackId of orderedTrackIds) {
+      const track = trackMap.get(trackId);
+      if (track?.analysis) {
+        orderedTracks.push({
+          id: track.id,
+          analysis: {
+            bpm: track.analysis.bpm,
+            camelot: track.analysis.camelot,
+            energy: track.analysis.energy,
+          },
+        });
+      }
+    }
+
+    if (orderedTracks.length < 2) {
+      await prisma.transition.deleteMany({ where: { projectId } });
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { averageMixScore: 0 },
+      });
+      return { transitions: [], averageScore: 0 };
+    }
+
+    // Calculate transitions for the given order
+    const transitionData: TransitionData[] = [];
+    for (let i = 0; i < orderedTracks.length - 1; i++) {
+      const current = orderedTracks[i];
+      const next = orderedTracks[i + 1];
+      if (current && next) {
+        const transition = this.calculateTransition(current, next, i);
+        transitionData.push(transition);
+      }
+    }
+
+    // Calculate average score
+    const averageScore = transitionData.length > 0
+      ? Math.round(transitionData.reduce((sum, t) => sum + t.score, 0) / transitionData.length)
+      : 0;
+
+    // Save to database
+    await prisma.transition.deleteMany({ where: { projectId } });
+
+    if (transitionData.length > 0) {
+      await prisma.transition.createMany({
+        data: transitionData.map(t => ({
+          projectId,
+          fromTrackId: t.fromTrackId,
+          toTrackId: t.toTrackId,
+          position: t.position,
+          score: t.score,
+          harmonicScore: t.harmonicScore,
+          bpmScore: t.bpmScore,
+          energyScore: t.energyScore,
+          compatibilityType: t.compatibilityType,
+          bpmDifference: t.bpmDifference,
+          energyDifference: t.energyDifference,
+        })),
+      });
+    }
+
+    // Update project average score
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { averageMixScore: averageScore },
+    });
+
+    this.logger.log(`Recalculated ${transitionData.length} transitions, avg score: ${averageScore}`);
+
+    // Return full transitions
+    const transitions = await this.getTransitions(projectId);
+    return { transitions, averageScore };
+  }
+
+  /**
    * Get transitions for a project
    */
   async getTransitions(projectId: string): Promise<Transition[]> {

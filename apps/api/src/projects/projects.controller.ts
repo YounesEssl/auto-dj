@@ -18,11 +18,13 @@ import type { User } from '@autodj/database';
 import { prisma } from '@autodj/database';
 import type { TransitionAudioJobPayload } from '@autodj/shared-types';
 import * as fs from 'fs';
+import * as path from 'path';
 
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { QueueService } from '../queue/queue.service';
 import { OrderingService } from '../ordering/ordering.service';
@@ -305,10 +307,19 @@ export class ProjectsController {
     }
 
     const filePath = project.outputFile;
-    const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_mix.mp3`;
+
+    if (!fs.existsSync(filePath)) {
+      return { error: 'Mix file not found on disk' };
+    }
+
+    // Determine content type based on file extension
+    const isWav = filePath.endsWith('.wav');
+    const contentType = isWav ? 'audio/wav' : 'audio/mpeg';
+    const extension = isWav ? 'wav' : 'mp3';
+    const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_mix.${extension}`;
 
     res.set({
-      'Content-Type': 'audio/mpeg',
+      'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${fileName}"`,
     });
 
@@ -317,21 +328,66 @@ export class ProjectsController {
   }
 
   /**
-   * Stream transition audio file
+   * Stream the final mix audio (public endpoint for audio element)
    */
+  @Public()
+  @Get(':id/stream')
+  @ApiOperation({ summary: 'Stream the final mix audio' })
+  @ApiResponse({ status: 200, description: 'Audio stream' })
+  @ApiResponse({ status: 404, description: 'Mix file not found' })
+  async streamMix(
+    @Param('id') id: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const project = await prisma.project.findUnique({
+      where: { id },
+    });
+
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    if (!project.outputFile) {
+      res.status(404).json({ error: 'Mix file not ready' });
+      return;
+    }
+
+    const filePath = project.outputFile;
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Mix file not found on disk' });
+      return;
+    }
+
+    const stat = fs.statSync(filePath);
+    const isWav = filePath.endsWith('.wav');
+    const contentType = isWav ? 'audio/wav' : 'audio/mpeg';
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': stat.size,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=31536000',
+    });
+
+    const file = fs.createReadStream(filePath);
+    file.pipe(res);
+  }
+
+  /**
+   * Stream transition audio file (public for audio element access)
+   */
+  @Public()
   @Get(':id/transitions/:transitionId/audio')
   @ApiOperation({ summary: 'Stream transition audio file' })
   @ApiResponse({ status: 200, description: 'Audio stream' })
   @ApiResponse({ status: 404, description: 'Transition not found or audio not ready' })
   async streamTransitionAudio(
-    @CurrentUser() user: User,
     @Param('id') id: string,
     @Param('transitionId') transitionId: string,
     @Res() res: Response
   ): Promise<void> {
-    // Verify user owns the project
-    await this.projectsService.findByIdAndUser(id, user.id);
-
     const transition = await prisma.transition.findUnique({
       where: { id: transitionId },
     });
@@ -347,8 +403,8 @@ export class ProjectsController {
     }
 
     // Get absolute path from storage
-    const storagePath = process.env.STORAGE_PATH || '/app/storage';
-    const absolutePath = `${storagePath}/${transition.audioFilePath}`;
+    const storagePath = path.resolve(process.env.STORAGE_PATH || './storage');
+    const absolutePath = path.join(storagePath, transition.audioFilePath);
 
     if (!fs.existsSync(absolutePath)) {
       res.status(404).json({ error: 'Audio file not found' });
@@ -481,8 +537,8 @@ export class ProjectsController {
       return;
     }
 
-    const storagePath = process.env.STORAGE_PATH || '/app/storage';
-    const absolutePath = `${storagePath}/${segment.audioFilePath}`;
+    const storagePath = path.resolve(process.env.STORAGE_PATH || './storage');
+    const absolutePath = path.join(storagePath, segment.audioFilePath);
 
     if (!fs.existsSync(absolutePath)) {
       res.status(404).json({ error: 'Audio file not found' });

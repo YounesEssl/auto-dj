@@ -6,6 +6,7 @@ interface ProjectState {
   projects: Project[];
   currentProject: Project | null;
   isLoading: boolean;
+  isLoadingList: boolean;
   error: string | null;
   fetchProjects: () => Promise<void>;
   fetchProject: (id: string) => Promise<void>;
@@ -17,23 +18,31 @@ interface ProjectState {
 /**
  * Project management store using Zustand
  */
-export const useProjectStore = create<ProjectState>((set) => ({
+export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   currentProject: null,
   isLoading: false,
+  isLoadingList: false,
   error: null,
 
   fetchProjects: async () => {
-    set({ isLoading: true, error: null });
+    // Prevent concurrent fetches
+    if (get().isLoadingList) return;
+
+    set({ isLoadingList: true, error: null });
     try {
       const projects = await projectsService.getAll();
-      set({ projects, isLoading: false });
+      set({ projects, isLoadingList: false });
     } catch (error) {
-      set({ error: 'Failed to fetch projects', isLoading: false });
+      set({ error: 'Failed to fetch projects', isLoadingList: false });
     }
   },
 
   fetchProject: async (id: string) => {
+    // Prevent concurrent fetches for the same project
+    const state = get();
+    if (state.isLoading && state.currentProject?.id === id) return;
+
     set({ isLoading: true, error: null });
     try {
       const project = await projectsService.getById(id);

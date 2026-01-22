@@ -113,6 +113,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     completedCount?: number;
     totalCount?: number;
     error?: string;
+    stage?: string;
+    message?: string;
   }) {
     const room = `project:${projectId}`;
     this.logger.log(`Sending transition:progress to ${room}: ${data.transitionId} - ${data.status}`);

@@ -87,3 +87,53 @@ async def publish_result(
         draft_id=draft_id,
         has_error=error is not None,
     )
+
+
+async def publish_progress(
+    project_id: Optional[str] = None,
+    transition_id: Optional[str] = None,
+    draft_id: Optional[str] = None,
+    stage: str = "",
+    progress: int = 0,
+    message: str = "",
+):
+    """
+    Publish a progress update to the results queue for real-time tracking.
+
+    Args:
+        project_id: Project identifier
+        transition_id: Transition identifier
+        draft_id: Draft identifier
+        stage: Current stage (extraction, time-stretch, stems, beatmatch, mixing, export)
+        progress: Progress percentage (0-100)
+        message: Human-readable progress message
+    """
+    queue = _get_results_queue()
+
+    payload: Dict[str, Any] = {
+        "type": "progress",
+        "stage": stage,
+        "progress": progress,
+        "message": message,
+    }
+
+    if project_id:
+        payload["projectId"] = project_id
+
+    if transition_id:
+        payload["transitionId"] = transition_id
+
+    if draft_id:
+        payload["draftId"] = draft_id
+
+    # Add job to BullMQ queue
+    await queue.add("progress", payload)
+
+    logger.debug(
+        "Published progress",
+        stage=stage,
+        progress=progress,
+        project_id=project_id,
+        transition_id=transition_id,
+        draft_id=draft_id,
+    )

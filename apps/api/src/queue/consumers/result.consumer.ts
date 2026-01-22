@@ -9,13 +9,17 @@ import { WebsocketGateway } from '../../websocket/websocket.gateway';
 import { OrderingService } from '../../ordering/ordering.service';
 
 interface ResultJob {
-  type: 'analyze' | 'transition_audio' | 'mix' | 'draft_transition';
+  type: 'analyze' | 'transition_audio' | 'mix' | 'draft_transition' | 'progress';
   projectId?: string;
   trackId?: string;
   transitionId?: string;
   draftId?: string;
   result?: AnalyzeJobResult | TransitionAudioJobResult | MixJobResult | DraftTransitionJobResult;
   error?: string;
+  // Progress fields
+  stage?: string;
+  progress?: number;
+  message?: string;
 }
 
 /**
@@ -61,6 +65,41 @@ export class ResultConsumer extends WorkerHost {
       case 'draft_transition':
         await this.handleDraftTransitionResult(draftId!, result as DraftTransitionJobResult);
         break;
+      case 'progress':
+        this.handleProgressUpdate(job.data);
+        break;
+    }
+  }
+
+  /**
+   * Handle real-time progress updates from Python worker
+   */
+  private handleProgressUpdate(data: ResultJob): void {
+    const { projectId, transitionId, draftId, stage, progress, message } = data;
+
+    this.logger.debug(`Progress update: ${stage} ${progress}% - ${message}`);
+
+    // Send progress to project room (for transition generation in projects)
+    if (projectId && transitionId) {
+      this.websocketGateway.sendTransitionProgress(projectId, {
+        projectId,
+        transitionId,
+        status: 'PROCESSING',
+        progress,
+        stage,
+        message,
+      });
+    }
+
+    // Send progress to draft room (for draft transition generation)
+    if (draftId) {
+      this.websocketGateway.sendDraftProgress(draftId, {
+        draftId,
+        step: (stage as any) || 'extraction',
+        progress: progress || 0,
+        status: 'PROCESSING',
+        message,
+      });
     }
   }
 
@@ -277,7 +316,7 @@ export class ResultConsumer extends WorkerHost {
    * Handle mix result from Python worker
    */
   private async handleMixResult(projectId: string, result: MixJobResult): Promise<void> {
-    this.logger.log(`Processing mix result with ${result.segments?.length || 0} segments`);
+    this.logger.log(`Processing mix result with ${result.segments?.length || 0} segments, outputFile: ${result.outputFile}`);
 
     // Delete existing mix segments for this project
     await prisma.mixSegment.deleteMany({
@@ -305,23 +344,32 @@ export class ResultConsumer extends WorkerHost {
       }
     }
 
-    // Update project status to COMPLETED
+    // Determine final status based on outputFile
+    const hasOutputFile = !!result.outputFile;
+    const storagePath = process.env.STORAGE_PATH || 'storage';
+    const outputFilePath = hasOutputFile ? `${storagePath}/${result.outputFile}` : null;
+
+    // Update project status and outputFile
     await prisma.project.update({
       where: { id: projectId },
       data: {
-        status: 'COMPLETED',
+        status: hasOutputFile ? 'COMPLETED' : 'READY',
+        outputFile: outputFilePath,
+        errorMessage: result.concatenationError || null,
       },
     });
 
     // Notify via WebSocket
     this.websocketGateway.sendProgress(projectId, {
       projectId,
-      stage: 'completed',
+      stage: hasOutputFile ? 'completed' : 'ready',
       progress: 100,
-      currentStep: 'Mix complete! Ready for playback.',
+      currentStep: hasOutputFile
+        ? 'Mix complete! Ready for playback.'
+        : 'Segments generated but final mix failed. Check error message.',
     });
 
-    this.logger.log(`Mix completed for project: ${projectId} with ${result.segments?.length || 0} segments`);
+    this.logger.log(`Mix completed for project: ${projectId} with ${result.segments?.length || 0} segments, outputFile: ${outputFilePath}`);
   }
 
   /**

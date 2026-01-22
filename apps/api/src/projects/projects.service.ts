@@ -1,14 +1,19 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { prisma, ProjectStatus } from '@autodj/database';
 
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { OrderingService } from '../ordering/ordering.service';
 
 /**
  * Service for project data operations
  */
 @Injectable()
 export class ProjectsService {
+  constructor(
+    @Inject(forwardRef(() => OrderingService))
+    private readonly orderingService: OrderingService,
+  ) {}
   /**
    * Find all projects for a user
    */
@@ -17,11 +22,10 @@ export class ProjectsService {
       where: { userId },
       include: {
         tracks: {
-          select: {
-            id: true,
-            originalName: true,
-            duration: true,
+          include: {
+            analysis: true,
           },
+          orderBy: { createdAt: 'asc' },
         },
         _count: {
           select: { tracks: true },
@@ -87,11 +91,44 @@ export class ProjectsService {
    * Update a project
    */
   async update(id: string, userId: string, dto: UpdateProjectDto) {
-    await this.findByIdAndUser(id, userId);
+    const project = await this.findByIdAndUser(id, userId);
+
+    // If orderedTracks is provided, validate that all track IDs belong to this project
+    if (dto.orderedTracks) {
+      const projectTrackIds = new Set(project.tracks.map(t => t.id));
+      const invalidIds = dto.orderedTracks.filter(trackId => !projectTrackIds.has(trackId));
+
+      if (invalidIds.length > 0) {
+        throw new NotFoundException(`Tracks not found in project: ${invalidIds.join(', ')}`);
+      }
+
+      // Check for duplicates
+      const uniqueIds = new Set(dto.orderedTracks);
+      if (uniqueIds.size !== dto.orderedTracks.length) {
+        throw new ForbiddenException('Duplicate track IDs are not allowed');
+      }
+
+      // Recalculate transitions for the new order
+      await this.orderingService.recalculateTransitionsForOrder(id, dto.orderedTracks);
+    }
 
     return prisma.project.update({
       where: { id },
-      data: dto,
+      data: {
+        ...(dto.name && { name: dto.name }),
+        ...(dto.orderedTracks && { orderedTracks: dto.orderedTracks }),
+      },
+      include: {
+        tracks: {
+          include: {
+            analysis: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        transitions: {
+          orderBy: { position: 'asc' },
+        },
+      },
     });
   }
 

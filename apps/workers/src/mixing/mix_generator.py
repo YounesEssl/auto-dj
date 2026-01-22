@@ -59,6 +59,8 @@ class TransitionResult:
     audio: np.ndarray
     sample_rate: int
     duration_ms: int
+    track_a_cut_ms: int = 0
+    track_b_start_ms: int = 0
 
 
 def calculate_transition_duration_bars(energy_a: float, energy_b: float) -> int:
@@ -219,150 +221,70 @@ def generate_transition_audio(
     progress_callback: Optional[callable] = None
 ) -> TransitionResult:
     """
-    Generate professional DJ-style transition between two tracks.
-
-    Steps:
-    1. Calculate transition duration based on energy
-    2. Extract outro of Track A and intro of Track B
-    3. Separate stems with Demucs
-    4. Time-stretch Track B to match Track A's BPM
-    5. Align beats (beatmatching)
-    6. Mix with 4-phase crossfade and EQ
-    7. Export
+    Generate transition by delegating to the Draft Engine (Unified Logic).
     """
+    # Step 1: Prepare params for Draft Engine
+    # We use the Draft Engine because it has the Smart Logic (LLM, Bass Swap, Smart Start/End)
+    from src.mixing.draft_transition_generator import (
+        generate_draft_transition,
+        DraftTransitionParams,
+        DraftTransitionResult
+    )
+
     logger.info(
-        "Generating transition",
+        "Delegating transition to Draft Engine (Unified)",
         from_track=track_a.id,
-        to_track=track_b.id,
-        bpm_a=track_a.bpm,
-        bpm_b=track_b.bpm
+        to_track=track_b.id
     )
-
-    # Step 1: Calculate duration
-    transition_bars = calculate_transition_duration_bars(track_a.energy, track_b.energy)
-    transition_duration_ms = bars_to_ms(transition_bars, track_a.bpm)
-    transition_samples = ms_to_samples(transition_duration_ms)
-
-    logger.info(
-        "Transition parameters",
-        bars=transition_bars,
-        duration_ms=transition_duration_ms,
-        target_bpm=track_a.bpm
+    
+    # Map TrackData to DraftTransitionParams
+    draft_params = DraftTransitionParams(
+        draft_id=f"mix_{track_a.id}_{track_b.id}",
+        track_a_path=track_a.file_path,
+        track_b_path=track_b.file_path,
+        track_a_bpm=track_a.bpm,
+        track_b_bpm=track_b.bpm,
+        track_a_beats=track_a.beats,
+        track_b_beats=track_b.beats,
+        track_a_outro_start_ms=int(track_a.outro_start_ms),
+        track_b_intro_end_ms=int(track_b.intro_end_ms),
+        track_a_energy=track_a.energy,
+        track_b_energy=track_b.energy,
+        track_a_duration_ms=int(track_a.duration_ms),
+        track_b_duration_ms=int(track_b.duration_ms),
+        output_path=output_path
     )
-
-    if progress_callback:
-        progress_callback("Loading audio", 5)
-
-    # Step 2: Load and extract segments
-    audio_a, sr_a = load_audio(track_a.file_path)
-    audio_b, sr_b = load_audio(track_b.file_path)
-
-    # Calculate extraction points
-    outro_start_ms = track_a.outro_start_ms
-    if outro_start_ms is None or outro_start_ms <= 0:
-        outro_start_ms = get_default_outro_start_ms(track_a.bpm, track_a.duration_ms)
-
-    intro_end_ms = track_b.intro_end_ms
-    if intro_end_ms is None or intro_end_ms <= 0:
-        intro_end_ms = get_default_intro_end_ms(track_b.bpm, track_b.duration_ms)
-
-    # Extract segments (use transition_duration or available length)
-    outro_start_sample = ms_to_samples(int(outro_start_ms), sr_a)
-    outro_end_sample = min(
-        outro_start_sample + ms_to_samples(transition_duration_ms, sr_a),
-        len(audio_a)
+    
+    # Step 2: Generate using Draft Engine
+    # This ensures consistency: Draft results = Full Mix results
+    result: DraftTransitionResult = generate_draft_transition(
+        draft_params,
+        progress_callback=progress_callback
     )
-
-    intro_end_sample = min(
-        ms_to_samples(transition_duration_ms, sr_b),
-        ms_to_samples(int(intro_end_ms), sr_b),
-        len(audio_b)
-    )
-
-    segment_a = audio_a[outro_start_sample:outro_end_sample]
-    segment_b = audio_b[0:intro_end_sample]
-
-    logger.info(
-        "Extracted segments",
-        segment_a_samples=len(segment_a),
-        segment_b_samples=len(segment_b)
-    )
-
-    if progress_callback:
-        progress_callback("Separating stems (Track A)", 10)
-
-    # Step 3: Separate stems
-    stems_a = separate_stems(segment_a, sr_a)
-
-    if progress_callback:
-        progress_callback("Separating stems (Track B)", 40)
-
-    stems_b = separate_stems(segment_b, sr_b)
-
-    if progress_callback:
-        progress_callback("Processing audio", 70)
-
-    # Step 4: Time-stretch Track B to match BPM
-    stretch_ratio, is_within_limits = calculate_stretch_ratio(track_b.bpm, track_a.bpm)
-
-    if not is_within_limits:
-        logger.warning(
-            "BPM difference too large, using simple crossfade",
-            bpm_a=track_a.bpm,
-            bpm_b=track_b.bpm,
-            ratio=stretch_ratio
+    
+    # Step 3: Load the generated audio to return it as numpy array
+    try:
+        # Load at 44100Hz
+        audio, sr = sf.read(output_path)
+        
+        # Ensure 2D array (samples, channels)
+        if len(audio.shape) == 1:
+            audio = np.stack([audio, audio], axis=1)
+        elif audio.shape[0] == 2 and audio.shape[1] > 2:
+            # Transpose if channels are first dimension
+            audio = audio.T
+            
+        return TransitionResult(
+            audio=audio,
+            sample_rate=sr,
+            duration_ms=result.transition_duration_ms,
+            track_a_cut_ms=result.track_a_play_until_ms,
+            track_b_start_ms=result.track_b_start_from_ms
         )
-        # Fallback: simple crossfade without time-stretch
-        stretched_stems_b = stems_b
-    else:
-        # Time-stretch each stem
-        stretched_stems_b = {}
-        for stem_name, stem_audio in stems_b.items():
-            stretched_stems_b[stem_name] = time_stretch(stem_audio, sr_b, stretch_ratio)
-
-    # Step 5: Align lengths (make both segment sets same duration)
-    target_samples = transition_samples
-
-    # Pad or trim stems to target length
-    aligned_stems_a = _align_stems_length(stems_a, target_samples)
-    aligned_stems_b = _align_stems_length(stretched_stems_b, target_samples)
-
-    if progress_callback:
-        progress_callback("Mixing transition", 80)
-
-    # Step 6: Mix with 4-phase crossfade
-    mixed = mix_stems_4_phase(
-        aligned_stems_a,
-        aligned_stems_b,
-        transition_bars,
-        track_a.bpm,
-        SAMPLE_RATE
-    )
-
-    # Step 7: Apply limiter to prevent clipping
-    mixed = apply_limiter(mixed, -1.0)  # Limit to -1dB
-
-    if progress_callback:
-        progress_callback("Saving transition", 95)
-
-    # Save to file
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    sf.write(output_path, mixed.T, SAMPLE_RATE)
-
-    logger.info(
-        "Transition generated",
-        output_path=output_path,
-        duration_ms=transition_duration_ms
-    )
-
-    if progress_callback:
-        progress_callback("Complete", 100)
-
-    return TransitionResult(
-        audio=mixed,
-        sample_rate=SAMPLE_RATE,
-        duration_ms=transition_duration_ms
-    )
+        
+    except Exception as e:
+        logger.error("Failed to load generated transition", error=str(e))
+        raise
 
 
 def _align_stems_length(stems: Dict[str, np.ndarray], target_samples: int) -> Dict[str, np.ndarray]:
@@ -493,6 +415,9 @@ def apply_limiter(audio: np.ndarray, threshold_db: float = -1.0) -> np.ndarray:
     return audio
 
 
+
+
+
 def generate_mix_for_project(
     project_id: str,
     tracks_data: List[Dict[str, Any]],
@@ -509,7 +434,7 @@ def generate_mix_for_project(
         progress_callback: Optional callback(message, percent)
 
     Returns:
-        Dict with segments info and generated file paths
+        Dict with segments info, generated file paths, and final output file
     """
     logger.info("Starting mix generation", project_id=project_id, track_count=len(tracks_data))
 
@@ -541,7 +466,9 @@ def generate_mix_for_project(
 
     results = {
         'segments': [],
-        'transition_files': {}
+        'transition_files': {},
+        'outputFile': None,
+        'totalDurationMs': 0
     }
 
     transition_segments = [s for s in segments if s.type == 'TRANSITION']
@@ -577,7 +504,8 @@ def generate_mix_for_project(
 
                     def trans_progress(msg, pct):
                         if progress_callback:
-                            overall_pct = int(((current_transition - 1) / total_transitions + pct / 100 / total_transitions) * 100)
+                            # Transitions use 0-70% of progress
+                            overall_pct = int(((current_transition - 1) / total_transitions + pct / 100 / total_transitions) * 70)
                             progress_callback(f"Transition {current_transition}/{total_transitions}: {msg}", overall_pct)
 
                     try:
@@ -591,6 +519,39 @@ def generate_mix_for_project(
                         segment_data['audioFilePath'] = relative_path
                         segment_data['durationMs'] = result.duration_ms
                         results['transition_files'][segment.transition_id] = relative_path
+                        
+                        # CRITICAL FIX: Update adjacent Solo segments to prevent duplicate audio
+                        # 1. Update previous segment (Solo A) end point
+                        if results['segments']:
+                            prev_segment = results['segments'][-1]
+                            if prev_segment['type'] == 'SOLO' and prev_segment['trackId'] == track_a.id:
+                                # Cut A where the transition actually started using A
+                                # Note: track_a_cut_ms from draft engine is where A *stops* playing in the transition context
+                                # But we want where Solo A stops. 
+                                # If transition uses A from X to Y, Solo A should stop at X.
+                                # Wait, track_a_cut_ms usually means "Play A until X".
+                                # Draft result: track_a_play_until_ms = where the *transition file* handles A.
+                                # Actually, track_a_play_until_ms = Outro Start usually? 
+                                # No, the transition file contains A from [OutroStart] to [OutroEnd].
+                                # So Solo A must end at [OutroStart].
+                                # Let's check what track_a_cut_ms represents in draft engine.
+                                # In draft_transition_generator: track_a_cut_ms = int(a_cue_time * 1000) + duration_ms ? 
+                                # No, track_a_cut_ms = track_a_play_until_ms = where we STOP playing the solo track.
+                                # The transition starts exactly there.
+                                
+                                # Use the value returned by the engine as the cut point.
+                                prev_segment['endMs'] = result.track_a_cut_ms
+                                prev_segment['durationMs'] = max(0, prev_segment['endMs'] - prev_segment['startMs'])
+                                logger.info("Adjusted Solo A end", track=track_a.id, end_ms=result.track_a_cut_ms)
+                        
+                        # 2. Update next segment (Solo B) start point
+                        if i + 1 < len(segments):
+                            next_segment = segments[i+1]
+                            if next_segment.type == 'SOLO' and next_segment.track_id == track_b.id:
+                                # Start B where the transition actually ends/releases B
+                                next_segment.start_ms = result.track_b_start_ms
+                                next_segment.duration_ms = max(0, next_segment.end_ms - next_segment.start_ms)
+                                logger.info("Adjusted Solo B start", track=track_b.id, start_ms=result.track_b_start_ms)
 
                     except Exception as e:
                         logger.error("Transition generation failed", error=str(e), track_a=track_a.id, track_b=track_b.id)
@@ -598,6 +559,9 @@ def generate_mix_for_project(
 
         results['segments'].append(segment_data)
 
-    logger.info("Mix generation complete", project_id=project_id, segments=len(results['segments']))
-
+    # Skip concatenation as requested by user
+    # The frontend will play segments individually using the adjusted start/end times
+    logger.info("Mix generation complete (segments only)", project_id=project_id, segments=len(results['segments']))
+    
     return results
+

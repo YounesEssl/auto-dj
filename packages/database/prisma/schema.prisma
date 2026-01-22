@@ -90,6 +90,14 @@ model Track {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
+  // Metadata extracted from audio file (ID3 tags, etc.)
+  metaTitle    String?        @map("meta_title")
+  metaArtist   String?        @map("meta_artist")
+  metaAlbum    String?        @map("meta_album")
+  metaGenre    String?        @map("meta_genre")
+  metaYear     Int?           @map("meta_year")
+  coverPath    String?        @map("cover_path")
+
   // Draft relations (a Track can be trackA or trackB in a Draft)
   draftAsTrackA Draft?        @relation("DraftTrackA")
   draftAsTrackB Draft?        @relation("DraftTrackB")
