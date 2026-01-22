@@ -125,3 +125,34 @@ packages/
 | Prisma "Cannot find module" | `pnpm db:generate` |
 | Redis connection refused | Vérifier que Docker tourne |
 | Workers crash en boucle | Vérifier `MISTRAL_API_KEY` dans `.env` |
+| Jobs d'analyse non traités | Voir section "Conflit Redis" ci-dessous |
+
+### Conflit Redis local / Docker
+
+**Symptôme:** Les tracks sont uploadés mais l'analyse ne se fait pas (pas de BPM, pas de tonalité).
+
+**Cause:** Un Redis local (installé via Homebrew) tourne sur le port 6379, ce qui entre en conflit avec le Redis Docker. L'API se connecte au Redis local tandis que les workers se connectent au Redis Docker.
+
+**Solution:**
+```bash
+# Arrêter le service Redis local
+brew services stop redis
+
+# Vérifier qu'il n'y a plus de Redis local
+ps aux | grep redis | grep -v grep
+# Si un process apparaît: kill <PID>
+
+# Redémarrer l'API
+# (Ctrl+C dans le terminal pnpm dev, puis relancer)
+pnpm dev
+```
+
+**Prévention automatique:** Le script `pnpm dev` vérifie automatiquement qu'aucun Redis local n'est actif avant de démarrer. Si un conflit est détecté, le script affiche les instructions pour le résoudre.
+
+```bash
+# Vérification manuelle
+pnpm check:redis
+
+# Démarrer sans vérification (si vous savez ce que vous faites)
+pnpm dev:skip-check
+```

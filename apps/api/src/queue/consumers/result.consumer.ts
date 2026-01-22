@@ -1,5 +1,5 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { Job } from 'bullmq';
 import type { AnalyzeJobResult, MixJobResult, TransitionAudioJobResult, OrderingResult, DraftTransitionJobResult } from '@autodj/shared-types';
 import { prisma, Prisma } from '@autodj/database';
@@ -40,6 +40,7 @@ export class ResultConsumer extends WorkerHost {
   constructor(
     private readonly websocketGateway: WebsocketGateway,
     private readonly orderingService: OrderingService,
+    @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
   ) {
     super();

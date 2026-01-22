@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { prisma } from '@autodj/database';
 
 import { ChatReorderProducer, ChatReorderJobPayload } from '../queue/producers/chat-reorder.producer';
@@ -35,6 +35,7 @@ export class ChatService {
   private conversations = new Map<string, ChatMessage[]>();
 
   constructor(
+    @Inject(forwardRef(() => ChatReorderProducer))
     private readonly chatReorderProducer: ChatReorderProducer,
     private readonly orderingService: OrderingService,
   ) {}

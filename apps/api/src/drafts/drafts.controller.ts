@@ -279,7 +279,7 @@ export class DraftsController {
       throw new BadRequestException(`No track in slot ${normalizedSlot}`);
     }
 
-    const absolutePath = track.filePath;
+    const absolutePath = this.storageService.getAbsolutePath(track.filePath.replace(/^storage\//, ''));
     const stat = statSync(absolutePath);
 
     res.set({

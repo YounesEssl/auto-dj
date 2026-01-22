@@ -11,6 +11,7 @@ import {
   Inject,
   forwardRef,
   Res,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { createReadStream, statSync, existsSync } from 'fs';
@@ -56,6 +57,8 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 @UseGuards(JwtAuthGuard)
 @Controller('projects/:projectId/tracks')
 export class TracksController {
+  private readonly logger = new Logger(TracksController.name);
+
   constructor(
     private readonly tracksService: TracksService,
     private readonly metadataService: MetadataService,
@@ -105,12 +108,18 @@ export class TracksController {
     @Param('projectId') projectId: string,
     @UploadedFiles() files: Express.Multer.File[]
   ) {
+    this.logger.log(`========== UPLOAD ENDPOINT CALLED ==========`);
+    this.logger.log(`Project ID: ${projectId}, User: ${user?.id}, Files count: ${files?.length || 0}`);
+
     // Verify user owns the project
     await this.projectsService.findByIdAndUser(projectId, user.id);
 
     if (!files || files.length === 0) {
+      this.logger.warn('No files in request');
       throw new BadRequestException('No files uploaded');
     }
+
+    this.logger.log(`Processing ${files.length} file(s)...`);
 
     const uploadedTracks = [];
 
@@ -139,8 +148,9 @@ export class TracksController {
         `projects/${projectId}/${filename}`
       );
 
-      // Extract metadata from the saved file
-      const metadata = await this.metadataService.extractMetadata(filePath, projectId);
+      // Extract metadata from the saved file (need absolute path for reading)
+      const absoluteFilePath = this.storageService.getAbsolutePath(filePath.replace(/^storage\//, ''));
+      const metadata = await this.metadataService.extractMetadata(absoluteFilePath, projectId);
 
       // Create track record with metadata
       const track = await this.tracksService.create({
@@ -162,11 +172,18 @@ export class TracksController {
       uploadedTracks.push(track);
 
       // Queue analysis job
-      await this.queueService.queueAnalyzeJob({
-        projectId,
-        trackId: track.id,
-        filePath,
-      });
+      this.logger.log(`Queueing analysis job for track ${track.id}, filePath: ${filePath}`);
+      try {
+        await this.queueService.queueAnalyzeJob({
+          projectId,
+          trackId: track.id,
+          filePath,
+        });
+        this.logger.log(`Successfully queued analysis job for track ${track.id}`);
+      } catch (error) {
+        this.logger.error(`Failed to queue analysis job for track ${track.id}:`, error);
+        throw error;
+      }
     }
 
     // Update project status to analyzing
@@ -233,8 +250,8 @@ export class TracksController {
       return;
     }
 
-    // filePath is already absolute in the database
-    const absolutePath = track.filePath;
+    // Convert relative path to absolute
+    const absolutePath = this.storageService.getAbsolutePath(track.filePath.replace(/^storage\//, ''));
 
     const stat = statSync(absolutePath);
 

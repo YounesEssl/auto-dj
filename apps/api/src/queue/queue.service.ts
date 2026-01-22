@@ -40,8 +40,14 @@ export class QueueService {
    * Queue a track for analysis
    */
   async queueAnalyzeJob(payload: AnalyzeJobPayload): Promise<void> {
-    await this.analyzeProducer.addJob(payload);
-    this.logger.log(`Queued analysis job for track: ${payload.trackId}`);
+    this.logger.log(`QueueService.queueAnalyzeJob called for track: ${payload.trackId}, file: ${payload.filePath}`);
+    try {
+      await this.analyzeProducer.addJob(payload);
+      this.logger.log(`QueueService: Successfully queued analysis job for track: ${payload.trackId}`);
+    } catch (error) {
+      this.logger.error(`QueueService: Failed to queue analysis job:`, error);
+      throw error;
+    }
   }
 
   /**

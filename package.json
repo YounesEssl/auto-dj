@@ -5,7 +5,9 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "./scripts/check-redis.sh && turbo run dev",
+    "dev:skip-check": "turbo run dev",
+    "check:redis": "./scripts/check-redis.sh",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

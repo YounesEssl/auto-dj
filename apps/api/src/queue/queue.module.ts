@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
@@ -24,13 +24,19 @@ export { QUEUE_NAMES } from './queue.constants';
   imports: [
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
-          port: configService.get<number>('REDIS_PORT', 6379),
-          password: configService.get<string>('REDIS_PASSWORD') || undefined,
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const host = configService.get<string>('REDIS_HOST', 'localhost');
+        const port = configService.get<number>('REDIS_PORT', 6379);
+        const password = configService.get<string>('REDIS_PASSWORD') || undefined;
+        console.log(`[QueueModule] Connecting to Redis at ${host}:${port}`);
+        return {
+          connection: {
+            host,
+            port,
+            password,
+          },
+        };
+      },
       inject: [ConfigService],
     }),
     BullModule.registerQueue(
@@ -42,7 +48,7 @@ export { QUEUE_NAMES } from './queue.constants';
       { name: QUEUE_NAMES.CHAT_REORDER }
     ),
     OrderingModule,
-    ChatModule,
+    forwardRef(() => ChatModule),
   ],
   providers: [QueueService, AnalyzeProducer, TransitionsProducer, MixProducer, DraftTransitionProducer, ChatReorderProducer, ResultConsumer],
   exports: [QueueService, TransitionsProducer, DraftTransitionProducer, ChatReorderProducer],
