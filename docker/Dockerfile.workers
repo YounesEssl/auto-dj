@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir "numpy>=1.14.6,<1.24" && \
     # Other audio libs
     pip install --no-cache-dir "scipy<1.12" && \
     pip install --no-cache-dir librosa==0.10.2 && \
-    pip install --no-cache-dir soundfile pydub structlog pydantic pydantic-settings redis bullmq scikit-learn pytest pytest-asyncio python-dotenv anthropic && \
+    pip install --no-cache-dir soundfile pydub structlog pydantic pydantic-settings redis bullmq scikit-learn pytest pytest-asyncio python-dotenv mistralai && \
     # PyTorch CPU for Demucs (smaller than GPU version)
     pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     # Demucs v4 for stem separation

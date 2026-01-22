@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useDrop } from 'react-dnd';
 import { Sparkles, Loader2, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -25,24 +24,21 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
     selection,
     setSelection,
     timelineTracks,
-    setTimelineTracks,
     moveTrackInTimeline,
     addTrackToTimeline,
     removeTrackFromTimeline,
   } = useStudioStore();
 
-  // Sync timeline with project's ordered tracks
-  useEffect(() => {
-    if (project.orderedTracks.length > 0) {
-      setTimelineTracks(project.orderedTracks);
-    }
-  }, [project.orderedTracks, setTimelineTracks]);
+  // Note: Timeline sync with project.orderedTracks is handled in StudioPage.tsx
 
   // Get track and transition data from project
   const tracksMap = new Map(project.tracks.map((t) => [t.id, t]));
   const transitionsMap = new Map(
     project.transitions.map((t) => [`${t.fromTrackId}-${t.toTrackId}`, t])
   );
+
+  // Filter timeline tracks to only include valid ones (defensive coding)
+  const validTimelineTracks = timelineTracks.filter((id) => tracksMap.has(id));
 
   // Drop zone for adding tracks from pool
   const [{ isOver, canDrop }, drop] = useDrop(
@@ -52,14 +48,14 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
         addTrackToTimeline(item.trackId);
       },
       canDrop: (item: { trackId: string }) => {
-        return !timelineTracks.includes(item.trackId);
+        return !validTimelineTracks.includes(item.trackId);
       },
       collect: (monitor) => ({
         isOver: monitor.isOver(),
         canDrop: monitor.canDrop(),
       }),
     }),
-    [timelineTracks, addTrackToTimeline]
+    [validTimelineTracks, addTrackToTimeline]
   );
 
   const handleTrackClick = (track: Track) => {
@@ -93,7 +89,7 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
   const canAutoArrange = analyzedTracks.length >= 2;
 
   // Calculate total duration
-  const totalDuration = timelineTracks.reduce((acc, trackId) => {
+  const totalDuration = validTimelineTracks.reduce((acc, trackId) => {
     const track = tracksMap.get(trackId);
     return acc + (track?.duration || 0);
   }, 0);
@@ -105,7 +101,7 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
   };
 
   // Empty state
-  if (timelineTracks.length === 0) {
+  if (validTimelineTracks.length === 0) {
     return (
       <div
         ref={drop}
@@ -155,7 +151,7 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/30 bg-muted/30 flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-muted-foreground">
-            {timelineTracks.length} tracks
+            {validTimelineTracks.length} tracks
           </span>
           <span className="text-xs text-muted-foreground/60">•</span>
           <span className="text-xs font-mono text-muted-foreground">
@@ -184,11 +180,11 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
       <div className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-studio">
         <div className="flex items-center gap-0 px-6 py-3 min-h-full">
           <AnimatePresence mode="popLayout">
-            {timelineTracks.map((trackId, index) => {
+            {validTimelineTracks.map((trackId, index) => {
               const track = tracksMap.get(trackId);
               if (!track) return null;
 
-              const nextTrackId = timelineTracks[index + 1];
+              const nextTrackId = validTimelineTracks[index + 1];
               const transition = nextTrackId
                 ? transitionsMap.get(`${trackId}-${nextTrackId}`)
                 : null;
@@ -213,7 +209,7 @@ export function Timeline({ project, onAutoArrange, isOrdering }: TimelineProps) 
                   />
 
                   {/* Transition Indicator (not after last track) */}
-                  {index < timelineTracks.length - 1 && (
+                  {index < validTimelineTracks.length - 1 && (
                     <TransitionIndicator
                       transition={transition || null}
                       isSelected={

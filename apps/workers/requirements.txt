@@ -21,7 +21,7 @@ pydantic-settings>=2.2.0
 structlog>=24.1.0
 
 # LLM Integration
-anthropic>=0.18.0
+mistralai>=1.0.0
 
 # Development
 pytest>=8.0.0

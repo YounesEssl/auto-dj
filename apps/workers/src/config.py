@@ -47,9 +47,10 @@ class Settings(BaseSettings):
     queue_mix: str = "audio-mix"
     queue_results: str = "results"
     queue_draft_transition: str = "draft-transition"
+    queue_chat_reorder: str = "chat-reorder"
 
     # LLM Configuration
-    anthropic_api_key: str = ""
+    mistral_api_key: str = ""
 
     def get_absolute_path(self, relative_path: str) -> str:
         """Convert a relative storage path to absolute path."""

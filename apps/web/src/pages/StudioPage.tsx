@@ -17,6 +17,7 @@ import { Inspector } from '@/components/studio/Inspector';
 import { PlayerBar } from '@/components/studio/PlayerBar';
 import { ProgressBar } from '@/components/studio/ProgressBar';
 import { StudioSkeleton } from '@/components/studio/Skeleton';
+import { Chat } from '@/components/studio/Chat';
 
 /**
  * Main Mix Studio page - unified workspace for creating DJ mixes
@@ -301,6 +302,9 @@ export function StudioPage() {
 
         {/* Player Bar */}
         <PlayerBar project={currentProject} />
+
+        {/* AI Chat Assistant */}
+        {id && currentProject && <Chat projectId={currentProject.id} />}
       </div>
     </DndProvider>
   );

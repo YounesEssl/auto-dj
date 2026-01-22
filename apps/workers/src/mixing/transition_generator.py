@@ -2,7 +2,7 @@
 Transition Audio Generator
 
 Generates high-quality audio transitions between two tracks using:
-- LLM-powered transition planning (Claude)
+- LLM-powered transition planning (Mistral)
 - Stem separation (Demucs htdemucs_ft)
 - Time-stretching (pyrubberband)
 - Beat-aligned mixing with dynamic phase transitions
@@ -471,7 +471,7 @@ def generate_transition_from_job(job_data: dict, progress_callback: Optional[cal
     Generate transition from job payload.
 
     This is the main entry point for the worker queue.
-    If LLM planning data is available, uses Claude to plan the transition.
+    If LLM planning data is available, uses Mistral to plan the transition.
 
     Args:
         job_data: Job payload containing transition parameters

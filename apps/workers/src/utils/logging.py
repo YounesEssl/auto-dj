@@ -65,8 +65,7 @@ def setup_logging(log_level: str = "INFO"):
         "httpcore.connection",
         "httpcore.http11",
         "urllib3",
-        "anthropic",
-        "anthropic._base_client",
+        "mistralai",
     ]
     for logger_name in noisy_loggers:
         logging.getLogger(logger_name).setLevel(logging.WARNING)

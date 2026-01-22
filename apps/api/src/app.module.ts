@@ -12,6 +12,7 @@ import { StorageModule } from './storage/storage.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { HealthModule } from './health/health.module';
 import { DraftsModule } from './drafts/drafts.module';
+import { ChatModule } from './chat/chat.module';
 
 /**
  * Root application module that imports all feature modules
@@ -50,6 +51,7 @@ import { DraftsModule } from './drafts/drafts.module';
     ProjectsModule,
     TracksModule,
     DraftsModule,
+    ChatModule,
     QueueModule,
     StorageModule,
     WebsocketModule,

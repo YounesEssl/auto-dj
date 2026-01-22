@@ -169,7 +169,34 @@ export const socketService = {
     }
   },
 
+  // Chat-specific methods
+  onChatResponse(callback: (data: ChatResponseEvent) => void) {
+    if (socket) {
+      socket.on('chat:response', callback);
+    }
+  },
+
+  offChatResponse(callback: (data: ChatResponseEvent) => void) {
+    if (socket) {
+      socket.off('chat:response', callback);
+    }
+  },
+
   getSocket(): Socket | null {
     return socket;
   },
 };
+
+// Chat response event type
+export interface ChatResponseEvent {
+  projectId: string;
+  response: string;
+  newOrder?: string[] | null;
+  reasoning?: string | null;
+  changesMade: string[];
+  projectData?: {
+    orderedTracks: string[];
+    transitions: unknown[];
+    averageMixScore: number | null;
+  } | null;
+}

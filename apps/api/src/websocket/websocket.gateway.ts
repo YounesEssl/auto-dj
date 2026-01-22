@@ -193,4 +193,28 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     this.logger.log(`Sending draft:analysis to ${room}: slot ${data.slot} - ${data.status}`);
     this.server.to(room).emit('draft:analysis', data);
   }
+
+  // ==========================================================================
+  // Chat-specific events
+  // ==========================================================================
+
+  /**
+   * Send chat response event to all clients subscribed to a project
+   */
+  sendChatResponse(projectId: string, data: {
+    projectId: string;
+    response: string;
+    newOrder?: string[] | null;
+    reasoning?: string | null;
+    changesMade: string[];
+    projectData?: {
+      orderedTracks: string[];
+      transitions: unknown[];
+      averageMixScore: number | null;
+    } | null;
+  }) {
+    const room = `project:${projectId}`;
+    this.logger.log(`Sending chat:response to ${room}: hasNewOrder=${!!data.newOrder}`);
+    this.server.to(room).emit('chat:response', data);
+  }
 }

@@ -1,11 +1,11 @@
 """
 LLM-based Transition Planner
 
-Uses Claude to intelligently plan transitions between tracks based on
+Uses Mistral to intelligently plan transitions between tracks based on
 audio analysis data, harmonic compatibility, and set context.
 """
 
-import anthropic
+from mistralai import Mistral
 import json
 import structlog
 from pathlib import Path
@@ -31,7 +31,7 @@ def plan_transition(
     context: dict
 ) -> dict:
     """
-    Call Claude to plan the optimal transition between two tracks.
+    Call Mistral to plan the optimal transition between two tracks.
 
     Args:
         track_a: Analysis of outgoing track (bpm, key, energy, outro_start, etc.)
@@ -42,7 +42,7 @@ def plan_transition(
     Returns:
         Detailed transition plan as JSON dict
     """
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = Mistral(api_key=settings.mistral_api_key)
 
     user_input = json.dumps({
         "context": context,
@@ -62,15 +62,17 @@ def plan_transition(
     )
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = client.chat.complete(
+            model="mistral-large-latest",
             max_tokens=2048,
-            system=_load_system_prompt(),
-            messages=[{"role": "user", "content": user_input}]
+            messages=[
+                {"role": "system", "content": _load_system_prompt()},
+                {"role": "user", "content": user_input}
+            ]
         )
 
         # Parse the JSON response
-        response_text = response.content[0].text
+        response_text = response.choices[0].message.content
 
         # Strip markdown code blocks if present (```json ... ```)
         cleaned_text = response_text.strip()
@@ -102,11 +104,8 @@ def plan_transition(
             response_preview=response_text[:200] if 'response_text' in dir() else None
         )
         return _fallback_plan(track_a, track_b, compatibility)
-    except anthropic.APIError as e:
-        logger.error("anthropic_api_error", error=str(e))
-        return _fallback_plan(track_a, track_b, compatibility)
     except Exception as e:
-        logger.error("llm_call_failed", error=str(e), error_type=type(e).__name__)
+        logger.error("mistral_api_error", error=str(e), error_type=type(e).__name__)
         return _fallback_plan(track_a, track_b, compatibility)
 
 

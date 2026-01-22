@@ -3,7 +3,7 @@ Draft Transition Generator
 
 Generates professional DJ transitions between exactly 2 tracks for the Draft feature.
 Implements the spec exactly:
-- LLM-powered transition planning (Claude) when data available
+- LLM-powered transition planning (Mistral) when data available
 - Duration based on average energy (16/24/32 bars) or LLM decision
 - 4-phase stem mixing with specific curves or LLM-defined phases
 - Progressive EQ (high-pass on A, low-pass on B)

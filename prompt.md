@@ -1,4 +1,4 @@
-# PROMPT CLAUDE CODE - Système de Transitions DJ Professionnel COMPLET
+# PROMPT - Système de Transitions DJ Professionnel COMPLET
 
 ## MISSION
 
@@ -14,7 +14,7 @@ apps/workers/
 ├── src/
 │   ├── analysis/        # Analyse audio (à enrichir)
 │   ├── mixing/          # Génération transitions (à réécrire)
-│   └── llm/             # Intégration Claude (à enrichir)
+│   └── llm/             # Intégration Mistral (à enrichir)
 ├── prompts/             # Prompts système
 └── requirements.txt
 ```
@@ -24,7 +24,7 @@ apps/workers/
 - **Analyse** : librosa, essentia, madmom
 - **Stems** : Demucs (htdemucs_ft) - sépare en drums, bass, vocals, other
 - **Traitement** : pydub, soundfile, pyrubberband, scipy
-- **LLM** : Anthropic Claude API
+- **LLM** : Mistral API
 
 ---
 

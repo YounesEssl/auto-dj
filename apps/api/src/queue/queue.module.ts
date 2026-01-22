@@ -8,8 +8,10 @@ import { AnalyzeProducer } from './producers/analyze.producer';
 import { TransitionsProducer } from './producers/transitions.producer';
 import { MixProducer } from './producers/mix.producer';
 import { DraftTransitionProducer } from './producers/draft-transition.producer';
+import { ChatReorderProducer } from './producers/chat-reorder.producer';
 import { ResultConsumer } from './consumers/result.consumer';
 import { OrderingModule } from '../ordering/ordering.module';
+import { ChatModule } from '../chat/chat.module';
 
 // Re-export for convenience
 export { QUEUE_NAMES } from './queue.constants';
@@ -36,11 +38,13 @@ export { QUEUE_NAMES } from './queue.constants';
       { name: QUEUE_NAMES.TRANSITIONS },
       { name: QUEUE_NAMES.MIX },
       { name: QUEUE_NAMES.RESULTS },
-      { name: QUEUE_NAMES.DRAFT_TRANSITION }
+      { name: QUEUE_NAMES.DRAFT_TRANSITION },
+      { name: QUEUE_NAMES.CHAT_REORDER }
     ),
     OrderingModule,
+    ChatModule,
   ],
-  providers: [QueueService, AnalyzeProducer, TransitionsProducer, MixProducer, DraftTransitionProducer, ResultConsumer],
-  exports: [QueueService, TransitionsProducer, DraftTransitionProducer],
+  providers: [QueueService, AnalyzeProducer, TransitionsProducer, MixProducer, DraftTransitionProducer, ChatReorderProducer, ResultConsumer],
+  exports: [QueueService, TransitionsProducer, DraftTransitionProducer, ChatReorderProducer],
 })
 export class QueueModule {}

@@ -7,4 +7,5 @@ export const QUEUE_NAMES = {
   MIX: 'audio-mix',
   RESULTS: 'results',
   DRAFT_TRANSITION: 'draft-transition',
+  CHAT_REORDER: 'chat-reorder',
 } as const;

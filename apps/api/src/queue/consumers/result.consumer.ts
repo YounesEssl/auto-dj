@@ -7,14 +7,22 @@ import { prisma, Prisma } from '@autodj/database';
 import { QUEUE_NAMES } from '../queue.constants';
 import { WebsocketGateway } from '../../websocket/websocket.gateway';
 import { OrderingService } from '../../ordering/ordering.service';
+import { ChatService } from '../../chat/chat.service';
+
+interface ChatReorderResult {
+  response: string;
+  new_order?: string[] | null;
+  reasoning?: string | null;
+  changes_made?: string[];
+}
 
 interface ResultJob {
-  type: 'analyze' | 'transition_audio' | 'mix' | 'draft_transition' | 'progress';
+  type: 'analyze' | 'transition_audio' | 'mix' | 'draft_transition' | 'chat_reorder' | 'progress';
   projectId?: string;
   trackId?: string;
   transitionId?: string;
   draftId?: string;
-  result?: AnalyzeJobResult | TransitionAudioJobResult | MixJobResult | DraftTransitionJobResult;
+  result?: AnalyzeJobResult | TransitionAudioJobResult | MixJobResult | DraftTransitionJobResult | ChatReorderResult;
   error?: string;
   // Progress fields
   stage?: string;
@@ -32,6 +40,7 @@ export class ResultConsumer extends WorkerHost {
   constructor(
     private readonly websocketGateway: WebsocketGateway,
     private readonly orderingService: OrderingService,
+    private readonly chatService: ChatService,
   ) {
     super();
     this.logger.log('ResultConsumer initialized - listening for results');
@@ -64,6 +73,9 @@ export class ResultConsumer extends WorkerHost {
         break;
       case 'draft_transition':
         await this.handleDraftTransitionResult(draftId!, result as DraftTransitionJobResult);
+        break;
+      case 'chat_reorder':
+        await this.handleChatReorderResult(projectId!, result as ChatReorderResult);
         break;
       case 'progress':
         this.handleProgressUpdate(job.data);
@@ -601,5 +613,46 @@ export class ResultConsumer extends WorkerHost {
 
     // More than 2 steps = decreasing score
     return Math.max(0, 50 - (wrappedDiff - 2) * 15);
+  }
+
+  /**
+   * Handle chat reorder result from Python worker
+   */
+  private async handleChatReorderResult(
+    projectId: string,
+    result: ChatReorderResult
+  ): Promise<void> {
+    // Process the result through ChatService (updates conversation history and applies new order if any)
+    await this.chatService.handleChatResult(projectId, result);
+
+    // Get updated project data if a new order was applied
+    let projectData = null;
+    if (result.new_order && result.new_order.length > 0) {
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        include: {
+          transitions: {
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+      projectData = project ? {
+        orderedTracks: project.orderedTracks,
+        transitions: project.transitions,
+        averageMixScore: project.averageMixScore,
+      } : null;
+    }
+
+    // Notify via WebSocket
+    this.websocketGateway.sendChatResponse(projectId, {
+      projectId,
+      response: result.response,
+      newOrder: result.new_order,
+      reasoning: result.reasoning,
+      changesMade: result.changes_made || [],
+      projectData,
+    });
+
+    this.logger.log(`Chat reorder completed for project: ${projectId}, hasNewOrder: ${!!result.new_order}`);
   }
 }

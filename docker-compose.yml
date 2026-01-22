@@ -80,7 +80,7 @@ services:
       - REDIS_PORT=6379
       - STORAGE_PATH=/app/storage
       - WORKER_COUNT=${WORKER_COUNT:-2}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
     volumes:
       - storage_data:/app/storage
     depends_on:

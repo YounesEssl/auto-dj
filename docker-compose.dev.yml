@@ -78,6 +78,7 @@ services:
       - STORAGE_BASE_PATH=/app/storage
       - WORKER_COUNT=2
       - LOG_LEVEL=DEBUG
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
     volumes:
       # Use the same named volume as the API container (from docker-compose.yml)
       - autodj_storage_data:/app/storage
@@ -94,4 +95,3 @@ volumes:
   postgres_dev_data:
   redis_dev_data:
   autodj_storage_data:
-    external: true

@@ -38,7 +38,8 @@ def main():
             settings.queue_analyze,
             settings.queue_mix,
             settings.queue_transitions,
-            settings.queue_draft_transition
+            settings.queue_draft_transition,
+            settings.queue_chat_reorder,
         ],
     )
 

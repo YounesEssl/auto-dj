@@ -14,6 +14,7 @@ from src.analysis.analyzer import analyze_track
 from src.mixing.mix_generator import generate_mix_for_project
 from src.mixing.transition_generator import generate_transition_from_job
 from src.mixing.draft_transition_generator import generate_draft_transition_from_job
+from src.llm.chat_reorder import chat_reorder, validate_reorder_request
 
 logger = structlog.get_logger()
 
@@ -310,6 +311,91 @@ async def draft_transition_job_processor(job, token):
     return result
 
 
+async def process_chat_reorder_job(job_data: Dict[str, Any], job_id: str) -> Dict[str, Any]:
+    """
+    Process a chat reorder job.
+
+    Args:
+        job_data: Job payload containing:
+            - projectId: Project ID
+            - message: User's message
+            - tracks: List of track data
+            - currentOrder: Current track order
+            - conversationHistory: Previous messages
+
+    Returns:
+        Chat response with potential new order
+    """
+    project_id = job_data["projectId"]
+    message = job_data["message"]
+    tracks = job_data["tracks"]
+    current_order = job_data["currentOrder"]
+    conversation_history = job_data.get("conversationHistory", [])
+
+    logger.info(
+        "Processing chat reorder job",
+        job_id=job_id,
+        project_id=project_id,
+        message_preview=message[:50],
+        tracks_count=len(tracks),
+    )
+
+    try:
+        # Validate request
+        validation = validate_reorder_request(message, tracks)
+        if not validation["valid"]:
+            return {
+                "response": validation["error"],
+                "new_order": None,
+                "reasoning": None,
+                "changes_made": [],
+            }
+
+        # Run chat reorder in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: chat_reorder(message, tracks, current_order, conversation_history)
+        )
+
+        # Publish result back to API
+        await publish_result(
+            result_type="chat_reorder",
+            project_id=project_id,
+            result=result,
+        )
+
+        logger.info(
+            "Chat reorder complete",
+            project_id=project_id,
+            has_new_order=result.get("new_order") is not None,
+        )
+        return result
+
+    except Exception as e:
+        logger.error("Chat reorder failed", project_id=project_id, error=str(e))
+        error_result = {
+            "response": "Une erreur s'est produite lors du traitement de ta demande.",
+            "new_order": None,
+            "reasoning": None,
+            "changes_made": [],
+        }
+        await publish_result(
+            result_type="chat_reorder",
+            project_id=project_id,
+            result=error_result,
+            error=str(e),
+        )
+        return error_result
+
+
+async def chat_reorder_job_processor(job, token):
+    """BullMQ job processor for chat reorder queue"""
+    logger.info("Received chat reorder job", job_id=job.id, data=job.data)
+    result = await process_chat_reorder_job(job.data, job.id)
+    return result
+
+
 def start_worker(worker_id: int):
     """
     Start BullMQ worker processes.
@@ -357,10 +443,16 @@ def start_worker(worker_id: int):
             {"connection": redis_opts}
         )
 
+        chat_reorder_worker = Worker(
+            settings.queue_chat_reorder,
+            chat_reorder_job_processor,
+            {"connection": redis_opts}
+        )
+
         logger.info(
             "Workers started",
             worker_id=worker_id,
-            queues=[settings.queue_analyze, settings.queue_transitions, settings.queue_mix, settings.queue_draft_transition],
+            queues=[settings.queue_analyze, settings.queue_transitions, settings.queue_mix, settings.queue_draft_transition, settings.queue_chat_reorder],
             redis_host=settings.redis_host,
         )
 
@@ -374,5 +466,6 @@ def start_worker(worker_id: int):
             await transitions_worker.close()
             await mix_worker.close()
             await draft_transition_worker.close()
+            await chat_reorder_worker.close()
 
     asyncio.run(run_workers())
