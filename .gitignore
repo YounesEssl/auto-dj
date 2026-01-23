@@ -41,6 +41,7 @@ packages/database/prisma/*.db
 packages/database/prisma/*.db-journal
 
 # Storage (local uploads)
+apps/api/storage/
 uploads/
 *.mp3
 *.wav
