@@ -35,6 +35,9 @@ Plateforme SaaS qui génère automatiquement des DJ mixes professionnels à part
 ```bash
 pnpm install
 cp .env.example .env
+
+# Créer le symlink pour Prisma (nécessaire pour db:push)
+ln -sf ../../.env packages/database/.env
 ```
 
 **Modifier `.env` - variable obligatoire:**
@@ -77,6 +80,7 @@ pnpm dev
 ```bash
 pnpm install
 cp .env.example .env
+ln -sf ../../.env packages/database/.env
 # Ajouter MISTRAL_API_KEY dans .env
 docker-compose -f docker-compose.dev.yml up --build  # Terminal 1
 pnpm db:generate && pnpm db:push                     # Terminal 2
@@ -123,6 +127,7 @@ packages/
 |----------|----------|
 | `mistralai` module not found | `docker-compose -f docker-compose.dev.yml up --build` |
 | Prisma "Cannot find module" | `pnpm db:generate` |
+| Prisma "DATABASE_URL not found" | `ln -sf ../../.env packages/database/.env` |
 | Redis connection refused | Vérifier que Docker tourne |
 | Workers crash en boucle | Vérifier `MISTRAL_API_KEY` dans `.env` |
 | Jobs d'analyse non traités | Voir section "Conflit Redis" ci-dessous |
