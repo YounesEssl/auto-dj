@@ -14,17 +14,17 @@ Plateforme SaaS qui génère automatiquement des DJ mixes professionnels à part
 
 ## Stack
 
-| Service | Tech | Port |
-|---------|------|------|
-| Frontend | React 18 + Vite + TailwindCSS | 5173 |
-| API | NestJS 10 + Socket.io | 3001 |
-| Workers | Python 3.10 (Essentia, Madmom, Demucs) | - |
-| DB | PostgreSQL 15 | 5433 |
-| Queue | Redis 7 + BullMQ | 6379 |
+| Service  | Tech                                   | Port |
+| -------- | -------------------------------------- | ---- |
+| Frontend | React 18 + Vite + TailwindCSS          | 5173 |
+| API      | NestJS 10 + Socket.io                  | 3001 |
+| Workers  | Python 3.10 (Essentia, Madmom, Demucs) | -    |
+| DB       | PostgreSQL 15                          | 5433 |
+| Queue    | Redis 7 + BullMQ                       | 6379 |
 
 ## Prérequis
 
-- Node.js >= 20
+- Node.js >= 24
 - pnpm >= 9
 - Docker & Docker Compose
 
@@ -38,6 +38,7 @@ cp .env.example .env
 ```
 
 **Modifier `.env` - variable obligatoire:**
+
 ```
 MISTRAL_API_KEY=votre-clé-api-mistral
 ```
@@ -65,15 +66,16 @@ pnpm dev
 
 ## URLs
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:5173 |
-| API | http://localhost:3001/api/v1 |
-| Swagger | http://localhost:3001/api/docs |
+| Service  | URL                            |
+| -------- | ------------------------------ |
+| Frontend | http://localhost:5173          |
+| API      | http://localhost:3001/api/v1   |
+| Swagger  | http://localhost:3001/api/docs |
 
 ## Résumé des commandes
 
 **Premier lancement:**
+
 ```bash
 pnpm install
 cp .env.example .env
@@ -84,6 +86,7 @@ pnpm dev                                              # Terminal 2
 ```
 
 **Lancements suivants:**
+
 ```bash
 docker-compose -f docker-compose.dev.yml up   # Terminal 1
 pnpm dev                                       # Terminal 2
@@ -119,13 +122,13 @@ packages/
 
 ## Troubleshooting
 
-| Problème | Solution |
-|----------|----------|
+| Problème                     | Solution                                              |
+| ---------------------------- | ----------------------------------------------------- |
 | `mistralai` module not found | `docker-compose -f docker-compose.dev.yml up --build` |
-| Prisma "Cannot find module" | `pnpm db:generate` |
-| Redis connection refused | Vérifier que Docker tourne |
-| Workers crash en boucle | Vérifier `MISTRAL_API_KEY` dans `.env` |
-| Jobs d'analyse non traités | Voir section "Conflit Redis" ci-dessous |
+| Prisma "Cannot find module"  | `pnpm db:generate`                                    |
+| Redis connection refused     | Vérifier que Docker tourne                            |
+| Workers crash en boucle      | Vérifier `MISTRAL_API_KEY` dans `.env`                |
+| Jobs d'analyse non traités   | Voir section "Conflit Redis" ci-dessous               |
 
 ### Conflit Redis local / Docker
 
@@ -134,6 +137,7 @@ packages/
 **Cause:** Un Redis local (installé via Homebrew) tourne sur le port 6379, ce qui entre en conflit avec le Redis Docker. L'API se connecte au Redis local tandis que les workers se connectent au Redis Docker.
 
 **Solution:**
+
 ```bash
 # Arrêter le service Redis local
 brew services stop redis
