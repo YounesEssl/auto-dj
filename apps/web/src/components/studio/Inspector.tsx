@@ -1,15 +1,22 @@
 import { useState } from 'react';
-import { Music, ArrowRight, RefreshCw, Loader2, AlertCircle, Check, X, Trash2, Calendar, Disc, Play } from 'lucide-react';
+import {
+  Music,
+  ArrowRight,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  Check,
+  X,
+  Trash2,
+  Calendar,
+  Disc,
+  Play,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { cn } from '@autodj/ui';
 import { Button } from '@autodj/ui';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@autodj/ui';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@autodj/ui';
 import type { Track, Transition } from '@/services/projects.service';
 import { projectsService } from '@/services/projects.service';
 import { useStudioStore } from '@/stores/studioStore';
@@ -48,7 +55,7 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
         <span className="text-muted-foreground">{label}</span>
         <span className={cn('font-medium', getScoreColor(score))}>{Math.round(score)}%</span>
       </div>
-      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+      <div className="bg-muted h-1.5 overflow-hidden rounded-full">
         <div
           className={cn('h-full rounded-full transition-all', getScoreBg(score))}
           style={{ width: `${score}%` }}
@@ -96,36 +103,32 @@ function TrackInspector({ track, projectId }: { track: Track; projectId: string 
     <TooltipProvider>
       <div className="space-y-4">
         {/* Cover Art with Play overlay */}
-        <div className="relative aspect-square rounded-lg overflow-hidden bg-muted/50 group">
+        <div className="bg-muted/50 group relative aspect-square overflow-hidden rounded-lg">
           {coverUrl ? (
-            <img
-              src={coverUrl}
-              alt={displayTitle}
-              className="w-full h-full object-cover"
-            />
+            <img src={coverUrl} alt={displayTitle} className="h-full w-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/5">
-              <Music className="w-12 h-12 text-muted-foreground/30" />
+            <div className="from-primary/10 to-accent/5 flex h-full w-full items-center justify-center bg-gradient-to-br">
+              <Music className="text-muted-foreground/30 h-12 w-12" />
             </div>
           )}
           {/* Play overlay */}
           <button
             onClick={handlePlayTrack}
-            className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
           >
-            <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center btn-glow">
-              <Play className="w-5 h-5 text-primary-foreground ml-0.5" />
+            <div className="bg-primary btn-glow flex h-12 w-12 items-center justify-center rounded-full">
+              <Play className="text-primary-foreground ml-0.5 h-5 w-5" />
             </div>
           </button>
         </div>
 
         {/* Track Info */}
         <div className="space-y-1">
-          <h3 className="font-semibold text-sm truncate" title={displayTitle}>
+          <h3 className="truncate text-sm font-semibold" title={displayTitle}>
             {displayTitle}
           </h3>
           {displayArtist && (
-            <p className="text-sm text-muted-foreground truncate" title={displayArtist}>
+            <p className="text-muted-foreground truncate text-sm" title={displayArtist}>
               {displayArtist}
             </p>
           )}
@@ -133,16 +136,16 @@ function TrackInspector({ track, projectId }: { track: Track; projectId: string 
 
         {/* Metadata Details */}
         {(metadata?.album || metadata?.genre || metadata?.year) && (
-          <div className="studio-panel rounded-lg p-3 space-y-2">
+          <div className="studio-panel space-y-2 rounded-lg p-3">
             {metadata?.album && (
               <div className="flex items-center gap-2 text-xs">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Disc className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    <Disc className="text-muted-foreground h-3.5 w-3.5 flex-shrink-0" />
                   </TooltipTrigger>
                   <TooltipContent>Album</TooltipContent>
                 </Tooltip>
-                <span className="truncate text-muted-foreground" title={metadata.album}>
+                <span className="text-muted-foreground truncate" title={metadata.album}>
                   {metadata.album}
                 </span>
               </div>
@@ -151,18 +154,18 @@ function TrackInspector({ track, projectId }: { track: Track; projectId: string 
               <div className="flex items-center gap-2 text-xs">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Music className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    <Music className="text-muted-foreground h-3.5 w-3.5 flex-shrink-0" />
                   </TooltipTrigger>
                   <TooltipContent>Genre</TooltipContent>
                 </Tooltip>
-                <span className="truncate text-muted-foreground">{metadata.genre}</span>
+                <span className="text-muted-foreground truncate">{metadata.genre}</span>
               </div>
             )}
             {metadata?.year && (
               <div className="flex items-center gap-2 text-xs">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Calendar className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    <Calendar className="text-muted-foreground h-3.5 w-3.5 flex-shrink-0" />
                   </TooltipTrigger>
                   <TooltipContent>Year</TooltipContent>
                 </Tooltip>
@@ -173,139 +176,147 @@ function TrackInspector({ track, projectId }: { track: Track; projectId: string 
         )}
 
         {/* Duration & File Info */}
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-between text-xs">
           <span>{track.duration ? formatDuration(track.duration) : 'Duration unknown'}</span>
           <span className="font-mono">{formatFileSize(track.fileSize)}</span>
         </div>
 
-      {analysis ? (
-        <>
-          {/* Key Metrics */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="studio-panel rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-1">BPM</p>
-              <p className="text-xl font-bold font-mono">{Math.round(analysis.bpm)}</p>
+        {analysis ? (
+          <>
+            {/* Key Metrics */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="studio-panel rounded-lg p-3">
+                <p className="text-muted-foreground mb-1 text-xs">BPM</p>
+                <p className="font-mono text-xl font-bold">{Math.round(analysis.bpm)}</p>
+              </div>
+              <div className="studio-panel rounded-lg p-3">
+                <p className="text-muted-foreground mb-1 text-xs">Key</p>
+                <p className="text-accent font-mono text-xl font-bold">{analysis.camelot}</p>
+                <p className="text-muted-foreground text-xs">{analysis.key}</p>
+              </div>
             </div>
-            <div className="studio-panel rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-1">Key</p>
-              <p className="text-xl font-bold font-mono text-accent">{analysis.camelot}</p>
-              <p className="text-xs text-muted-foreground">{analysis.key}</p>
-            </div>
-          </div>
 
-          {/* Analysis Bars */}
-          <div className="space-y-3">
-            <div className="space-y-1">
+            {/* Analysis Bars */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Energy</span>
+                  <span className="font-medium">{getEnergyLabel(analysis.energy)}</span>
+                </div>
+                <div className="vu-meter h-1.5 overflow-hidden rounded-full">
+                  <div
+                    className="bg-background h-full"
+                    style={{ width: `${100 - analysis.energy * 100}%`, marginLeft: 'auto' }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Danceability</span>
+                  <span className="font-medium">{Math.round(analysis.danceability * 100)}%</span>
+                </div>
+                <div className="bg-muted h-1.5 overflow-hidden rounded-full">
+                  <div
+                    className="bg-accent h-full rounded-full"
+                    style={{ width: `${analysis.danceability * 100}%` }}
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Energy</span>
-                <span className="font-medium">{getEnergyLabel(analysis.energy)}</span>
+                <span className="text-muted-foreground">Loudness</span>
+                <span className="font-mono font-medium">{analysis.loudness.toFixed(1)} dB</span>
               </div>
-              <div className="h-1.5 vu-meter rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-background"
-                  style={{ width: `${100 - analysis.energy * 100}%`, marginLeft: 'auto' }}
-                />
-              </div>
+
+              {analysis.vocalIntensity && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Vocals</span>
+                  <span className="font-medium capitalize">
+                    {analysis.vocalIntensity.toLowerCase()}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Danceability</span>
-                <span className="font-medium">{Math.round(analysis.danceability * 100)}%</span>
-              </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-accent rounded-full"
-                  style={{ width: `${analysis.danceability * 100}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">Loudness</span>
-              <span className="font-mono font-medium">{analysis.loudness.toFixed(1)} dB</span>
-            </div>
-
-            {analysis.vocalIntensity && (
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Vocals</span>
-                <span className="font-medium capitalize">{analysis.vocalIntensity.toLowerCase()}</span>
+            {/* Warnings */}
+            {analysis.mixabilityWarnings && analysis.mixabilityWarnings.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-xs font-medium">Warnings</p>
+                {analysis.mixabilityWarnings.map((warning, i) => (
+                  <div
+                    key={i}
+                    className="text-destructive/80 bg-destructive/10 flex items-start gap-2 rounded-lg p-2 text-xs"
+                  >
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <span>{warning}</span>
+                  </div>
+                ))}
               </div>
             )}
-          </div>
-
-          {/* Warnings */}
-          {analysis.mixabilityWarnings && analysis.mixabilityWarnings.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Warnings</p>
-              {analysis.mixabilityWarnings.map((warning, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 text-xs text-destructive/80 bg-destructive/10 rounded-lg p-2"
-                >
-                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>{warning}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Analyzing track...</span>
-        </div>
-      )}
-
-      {/* Delete Button with Confirmation */}
-      <div className="pt-2 border-t border-border">
-        {showDeleteConfirm ? (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground text-center">Delete this track?</p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={isDeleting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="flex-1"
-                onClick={handleDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Delete'}
-              </Button>
-            </div>
-          </div>
+          </>
         ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete Track
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Remove this track from the project</TooltipContent>
-          </Tooltip>
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Analyzing track...</span>
+          </div>
         )}
+
+        {/* Delete Button with Confirmation */}
+        <div className="border-border border-t pt-2">
+          {showDeleteConfirm ? (
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-center text-xs">Delete this track?</p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full gap-2"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Track
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove this track from the project</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
-    </div>
     </TooltipProvider>
   );
 }
 
-function TransitionInspector({ transition, projectId }: { transition: Transition; projectId: string }) {
+function TransitionInspector({
+  transition,
+  projectId,
+}: {
+  transition: Transition;
+  projectId: string;
+}) {
   const { fetchProject } = useProjectStore();
   const { currentProject } = useProjectStore();
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -313,8 +324,10 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
   const fromTrack = currentProject?.tracks.find((t) => t.id === transition.fromTrackId);
   const toTrack = currentProject?.tracks.find((t) => t.id === transition.toTrackId);
 
-  const fromName = fromTrack?.metadata?.title || fromTrack?.originalName.replace(/\.[^/.]+$/, '') || 'Track A';
-  const toName = toTrack?.metadata?.title || toTrack?.originalName.replace(/\.[^/.]+$/, '') || 'Track B';
+  const fromName =
+    fromTrack?.metadata?.title || fromTrack?.originalName.replace(/\.[^/.]+$/, '') || 'Track A';
+  const toName =
+    toTrack?.metadata?.title || toTrack?.originalName.replace(/\.[^/.]+$/, '') || 'Track B';
 
   const handleRegenerate = async () => {
     setIsRegenerating(true);
@@ -336,17 +349,17 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
         <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex-1 min-w-0 text-center">
-                <p className="text-xs text-muted-foreground truncate">{fromName}</p>
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-muted-foreground truncate text-xs">{fromName}</p>
               </div>
             </TooltipTrigger>
             <TooltipContent>{fromName}</TooltipContent>
           </Tooltip>
-          <ArrowRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <ArrowRight className="text-muted-foreground h-4 w-4 flex-shrink-0" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex-1 min-w-0 text-center">
-                <p className="text-xs text-muted-foreground truncate">{toName}</p>
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-muted-foreground truncate text-xs">{toName}</p>
               </div>
             </TooltipTrigger>
             <TooltipContent>{toName}</TooltipContent>
@@ -356,8 +369,8 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
         {/* Overall Score */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="studio-panel rounded-lg p-4 text-center cursor-help">
-              <p className="text-xs text-muted-foreground mb-2">Compatibility Score</p>
+            <div className="studio-panel cursor-help rounded-lg p-4 text-center">
+              <p className="text-muted-foreground mb-2 text-xs">Compatibility Score</p>
               <p className={cn('text-4xl font-bold', getScoreColor(transition.score))}>
                 {Math.round(transition.score)}
               </p>
@@ -400,8 +413,8 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
         {transition.bpmDifference > 3 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 rounded-lg p-2 cursor-help">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <div className="text-warning bg-warning/10 flex cursor-help items-center gap-2 rounded-lg p-2 text-xs">
+                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
                 <span>BPM difference: {transition.bpmDifference.toFixed(1)}%</span>
               </div>
             </TooltipTrigger>
@@ -411,7 +424,7 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
 
         {/* Transition Duration */}
         {transition.audioDurationMs && (
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex items-center justify-between text-xs">
             <span>Duration</span>
             <span className="font-mono">{formatDuration(transition.audioDurationMs / 1000)}</span>
           </div>
@@ -423,22 +436,22 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
           <div className="flex items-center gap-2">
             {transition.audioStatus === 'COMPLETED' ? (
               <>
-                <Check className="w-4 h-4 text-success" />
+                <Check className="text-success h-4 w-4" />
                 <span className="text-success">Ready</span>
               </>
             ) : transition.audioStatus === 'PROCESSING' ? (
               <>
-                <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                <Loader2 className="text-accent h-4 w-4 animate-spin" />
                 <span className="text-accent">Processing</span>
               </>
             ) : transition.audioStatus === 'ERROR' ? (
               <>
-                <X className="w-4 h-4 text-destructive" />
+                <X className="text-destructive h-4 w-4" />
                 <span className="text-destructive">Error</span>
               </>
             ) : (
               <>
-                <div className="w-2 h-2 rounded-full bg-muted-foreground" />
+                <div className="bg-muted-foreground h-2 w-2 rounded-full" />
                 <span className="text-muted-foreground">Pending</span>
               </>
             )}
@@ -446,7 +459,7 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
         </div>
 
         {/* Generate/Regenerate Button */}
-        <Tooltip>
+        {/* <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="outline"
@@ -468,7 +481,7 @@ function TransitionInspector({ transition, projectId }: { transition: Transition
               ? 'Create the transition audio between these tracks'
               : 'Recreate the transition with fresh processing'}
           </TooltipContent>
-        </Tooltip>
+        </Tooltip> */}
       </div>
     </TooltipProvider>
   );
@@ -485,33 +498,30 @@ export function Inspector({ projectId }: InspectorProps) {
   }
 
   return (
-    <aside className="w-64 h-full border-l border-border bg-card/30 flex flex-col">
+    <aside className="border-border bg-card/30 flex h-full w-64 flex-col border-l">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+      <div className="border-border flex items-center justify-between border-b px-3 py-2">
         <span className="text-sm font-medium">Inspector</span>
         <button
           onClick={() => setIsInspectorOpen(false)}
-          className="p-1 hover:bg-muted rounded transition-colors"
+          className="hover:bg-muted rounded p-1 transition-colors"
         >
-          <X className="w-4 h-4" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3 scrollbar-studio">
+      <div className="scrollbar-studio flex-1 overflow-y-auto p-3">
         {selection.type === 'track' && selection.data ? (
           <TrackInspector track={selection.data as Track} projectId={projectId} />
         ) : selection.type === 'transition' && selection.data ? (
-          <TransitionInspector
-            transition={selection.data as Transition}
-            projectId={projectId}
-          />
+          <TransitionInspector transition={selection.data as Transition} projectId={projectId} />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8">
-            <div className="rounded-full bg-muted/50 p-3 mb-3">
-              <Music className="w-6 h-6 text-muted-foreground" />
+          <div className="flex h-full flex-col items-center justify-center py-8 text-center">
+            <div className="bg-muted/50 mb-3 rounded-full p-3">
+              <Music className="text-muted-foreground h-6 w-6" />
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Select a track or transition to view details
             </p>
           </div>
