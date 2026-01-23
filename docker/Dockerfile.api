@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Stage 1: Builder (using Debian for native module compatibility)
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 # Install build tools for native modules
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
@@ -42,7 +42,7 @@ RUN pnpm --filter @autodj/database build
 RUN pnpm --filter @autodj/api build
 
 # Stage 2: Production (Debian slim for OpenSSL compatibility)
-FROM node:20-slim AS production
+FROM node:24-slim AS production
 
 WORKDIR /app
 
